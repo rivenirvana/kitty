@@ -15,23 +15,28 @@ function git_version {
     declare master_describe master_tag master_commits master_hash
     master_describe=$(git describe --first-parent origin/master)
     read master_tag master_commits master_hash <<<"${master_describe//-/ }"
-    [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash ]] || die "failed git describe"
 
     # get the future kitty version from the changelog
     declare changelog_version v x rest
     changelog_version="$(awk '$1 ~ /^[0-9]+\./ && $2 ~ /^\[/{print; exit}' < docs/changelog.rst)"
     read v x rest <<<"$changelog_version"
 
-    # remove brackets from $x
-    x=${x#\[}; x=${x%\]}
+    if [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash ]]
+    then
+        # remove brackets from $x
+        x=${x#\[}; x=${x%\]}
+    else
+        x="nightly"
+        master_hash=$(git rev-parse --short origin/master)
+    fi
 
     case $x in
         future)
             v="$v~$x.${master_commits}.${master_hash}" ;;
         2???-??-??)
             v="$v.0.git.${master_commits}.${master_hash}" ;;
-        *)
-            die "can't figure out version from changelog" ;;
+        nightly)
+            v="$v~$x.$(date +'%y%m%d').${master_hash}" ;;
     esac
 
     output "$v"

@@ -208,7 +208,7 @@ rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
 %files
 %license LICENSE
 %{_bindir}/%{name}
-%{_bindir}/%{name}-tool
+%{_bindir}/kitten
 %{_datadir}/applications/*.desktop
 %{_datadir}/icons/hicolor/*/*/*.{png,svg}
 %{_libdir}/%{name}/

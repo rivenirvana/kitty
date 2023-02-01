@@ -16,7 +16,13 @@ function git_version {
     master_describe=$(git describe --first-parent origin/master)
     tagged=false
     read master_tag master_commits master_hash <<<"${master_describe//-/ }"
-    [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash && tagged=true ]] || die "failed git describe"
+    if [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash ]]
+    then
+        tagged=true
+    else
+        die "failed git describe"
+    fi
+
     # get the future kitty version from the changelog
     declare changelog_version v x rest
     changelog_version="$(awk '$1 ~ /^[0-9]+\./ && $2 ~ /^\[/{print; exit}' < docs/changelog.rst)"

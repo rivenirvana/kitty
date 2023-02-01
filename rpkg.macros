@@ -14,11 +14,11 @@ function git_version {
     # v0.4.0-1080-g971e0ca90
     declare master_describe master_tag master_commits master_hash tagged
     master_describe=$(git describe --first-parent origin/master)
-    tagged=false
+    tagged=0
     read master_tag master_commits master_hash <<<"${master_describe//-/ }"
     if [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash ]]
     then
-        tagged=true
+        tagged=1
     else
         die "failed git describe"
     fi

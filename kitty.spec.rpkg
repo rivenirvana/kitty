@@ -30,7 +30,7 @@ Source3:        kitty.fish
 BuildRequires:  desktop-file-utils
 BuildRequires:  gcc
 BuildRequires:  git
-BuildRequires:  golang >= 1.19
+BuildRequires:  golang >= 1.20
 BuildRequires:  lcms2-devel
 BuildRequires:  libappstream-glib
 BuildRequires:  librsync-devel

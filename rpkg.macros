@@ -42,7 +42,7 @@ function git_version {
         future)
             v="$v~$x.${master_commits}.${master_hash}" ;;
         2???-??-??)
-            v="$v.0.git.${master_commits}.${master_hash}" ;;
+            v="$v~0.git.${master_commits}.${master_hash}" ;;
         nightly)
             v="$v~$x.$(date +'%y%m%d').g${master_hash}" ;;
     esac

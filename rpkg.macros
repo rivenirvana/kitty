@@ -7,6 +7,13 @@ function cached {
     [[ -n $v ]] && echo -n "$v"
 }
 
+function git_revision {
+    cached git_revision && return
+
+    # count commits not on master
+    output "$(git log --oneline origin/master.. | wc -l)"
+}
+
 function git_version {
     cached git_version && return
 
@@ -40,31 +47,17 @@ function git_version {
 
     case $x in
         future)
-            v="$v~$x.${master_commits}.${master_hash}" ;;
+            v="$v-$x.${master_commits}.$(git_revision).${master_hash}" ;;
         2???-??-??)
-            v="$v~0.git.${master_commits}.${master_hash}" ;;
+            v="$v-0.${master_commits}.${master_hash}" ;;
         nightly)
-            v="$v~$x.$(date +'%y%m%d').g${master_hash}" ;;
+            v="$v-$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
     esac
 
     output "$v"
 }
 
-function git_revision {
-    cached git_revision && return
-
-    # count commits not on master
-    output "$(git log --oneline origin/master.. | wc -l)"
-}
-
 function git_changelog_date {
     cached git_changelog_date && return
     output "$(date +'%a %b %d %Y')"
-}
-
-function git_changelog_version {
-    cached git_changelog_version && return
-    git_version &>/dev/null # cache
-    git_revision &>/dev/null # cache
-    output "$(git_version)-$(git_revision)"
 }

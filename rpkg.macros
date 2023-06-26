@@ -48,7 +48,7 @@ function git_release {
     fi
 
     # get the future kitty version from the changelog
-    declare r v x rest
+    declare v x rest
     read v x rest <<< "$(git_log_version)"
 
     if $tagged
@@ -62,14 +62,14 @@ function git_release {
 
     case $x in
         future)
-            r="$x.${master_commits}.$(git_revision).${master_hash}" ;;
+            x="$x.${master_commits}.$(git_revision).${master_hash}" ;;
         2???-??-??)
-            r="0.${master_commits}.${master_hash}" ;;
+            x="0.${master_commits}.${master_hash}" ;;
         nightly)
-            r="$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
+            x="$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
     esac
 
-    output "$r"
+    output "$x"
 }
 
 function git_changelog_date {

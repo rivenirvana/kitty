@@ -170,7 +170,7 @@ class CwdRequest:
         if reported_cwd and (self.request_type is not CwdRequestType.root or window.root_in_foreground_processes):
             ssh_kitten_cmdline = window.ssh_kitten_cmdline()
             if ssh_kitten_cmdline:
-                run_shell = argv[0] == resolved_shell(get_options())[0]
+                run_shell = argv[0] == resolved_shell(get_options())[0] or (len(argv) > 1 and os.path.basename(argv[0]) == 'kitten' and argv[1] == 'run-shell')
                 server_args = [] if run_shell else list(argv)
                 from kittens.ssh.utils import set_cwd_in_cmdline, set_env_in_cmdline, set_server_args_in_cmdline
                 argv[:] = ssh_kitten_cmdline

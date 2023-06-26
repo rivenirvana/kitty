@@ -48,8 +48,7 @@ function git_revision {
     fi
 
     # get the future kitty version from the changelog
-    declare v x rest
-    git_changelog_version &>/dev/null
+    declare r v x rest
     read v x rest <<< "$(git_changelog_version)"
 
     if $tagged
@@ -63,14 +62,14 @@ function git_revision {
 
     case $x in
         future)
-            v="$v-$x.${master_commits}.$(git_revision).${master_hash}" ;;
+            r="$x.${master_commits}.$(git_revision).${master_hash}" ;;
         2???-??-??)
-            v="$v-0.${master_commits}.${master_hash}" ;;
+            r="0.${master_commits}.${master_hash}" ;;
         nightly)
-            v="$v-$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
+            r="$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
     esac
 
-    output "$v"
+    output "$r"
 }
 
 function git_changelog_date {

@@ -135,7 +135,7 @@ def parse_session(raw: str, opts: Options, environ: Optional[Mapping[str, str]] 
         from .tabs import SpecialWindow
         for t in ans.tabs:
             if not t.windows:
-                t.windows.append(WindowSpec(SpecialWindow(cmd=cmdline_for_hold())))
+                t.windows.append(WindowSpec(SpecialWindow(cmd=resolved_shell(opts))))
         return ans
 
     if environ is None:

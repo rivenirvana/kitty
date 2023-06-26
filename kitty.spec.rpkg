@@ -239,5 +239,5 @@ rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
 
 
 %changelog
-* {{{git_changelog_date}}} Arvin Verain <arvinverain@proton.me> - {{{git_changelog_version}}}
+* {{{git_changelog_date}}} Arvin Verain <arvinverain@proton.me> - {{{git_version}}}-{{{git_release}}}
 - Nightly build from git master

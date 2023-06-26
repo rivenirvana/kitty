@@ -30,8 +30,8 @@ function git_version {
     output "$v"
 }
 
-function git_revision {
-    cached git_revision && return
+function git_release {
+    cached git_release && return
 
     # git describe --first-parent origin/master
     # v0.4.0-1080-g971e0ca90
@@ -75,15 +75,4 @@ function git_revision {
 function git_changelog_date {
     cached git_changelog_date && return
     output "$(date +'%a %b %d %Y')"
-}
-
-function git_changelog_version {
-    cached git_changelog_version && return
-
-    # cache
-    git_log_version &>/dev/null
-    git_version &>/dev/null
-    git_revision &>/dev/null
-
-    output "$(git_version)-$(git_revision)"
 }

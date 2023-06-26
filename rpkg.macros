@@ -38,7 +38,7 @@ function git_revision {
     declare master_describe master_tag master_commits master_hash tagged
     master_describe=$(git describe --first-parent origin/master)
     tagged=false
-    read master_tag master_commits master_hash <<<"${master_describe//-/ }"
+    read master_tag master_commits master_hash <<< "${master_describe//-/ }"
 
     if [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash ]]
     then
@@ -49,7 +49,8 @@ function git_revision {
 
     # get the future kitty version from the changelog
     declare v x rest
-    read v x rest <<<"$(git_changelog_version)"
+    git_changelog_version &>/dev/null
+    read v x rest <<< "$(git_changelog_version)"
 
     if $tagged
     then

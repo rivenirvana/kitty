@@ -177,7 +177,6 @@ This package contains the documentation for %{name}.
 
 
 %prep
-{{{git_setup_macro path="$GIT_ROOT"}}}
 
 # Changing sphinx theme to classic
 sed "s/html_theme = 'furo'/html_theme = 'classic'/" -i docs/conf.py

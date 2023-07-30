@@ -22,13 +22,13 @@ Source0:        {{{git_repo_pack}}}
 Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444e4f4994008f0d2dcb41e49389f4/kitty/data/%{name}.appdata.xml
 
 # Don't build kitten inside setup.py, use gobuild macro in the spec instead to build with fedora flags
-Patch0:         kitty-do-not-build-kitten.patch
+#Patch0:         kitty-do-not-build-kitten.patch
 
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
-BuildRequires:  golang >= 1.20.0
-BuildRequires:  go-rpm-macros
+#BuildRequires:  golang >= 1.20.0
+#BuildRequires:  go-rpm-macros
 BuildRequires:  git
 
 BuildRequires:  gnupg2
@@ -57,27 +57,27 @@ BuildRequires:  pkgconfig(zlib)
 BuildRequires:  pkgconfig(libcrypto)
 BuildRequires:  pkgconfig(libxxhash)
 
-BuildRequires:  golang(github.com/alecthomas/chroma/v2)
-BuildRequires:  golang(github.com/alecthomas/chroma/v2/lexers)
-BuildRequires:  golang(github.com/alecthomas/chroma/v2/styles)
-BuildRequires:  golang(github.com/ALTree/bigfloat)
-BuildRequires:  golang(github.com/bmatcuk/doublestar/v4)
-BuildRequires:  golang(github.com/disintegration/imaging)
-BuildRequires:  golang(github.com/google/go-cmp/cmp)
-BuildRequires:  golang(github.com/google/uuid)
-BuildRequires:  golang(github.com/jamesruan/go-rfc1924/base85)
-BuildRequires:  golang(github.com/seancfoley/ipaddress-go/ipaddr)
-BuildRequires:  golang(github.com/shirou/gopsutil/v3/process)
-BuildRequires:  golang(github.com/zeebo/xxh3)
-BuildRequires:  golang(golang.org/x/exp/constraints)
-BuildRequires:  golang(golang.org/x/exp/maps)
-BuildRequires:  golang(golang.org/x/exp/rand)
-BuildRequires:  golang(golang.org/x/exp/slices)
-BuildRequires:  golang(golang.org/x/image/bmp)
-BuildRequires:  golang(golang.org/x/image/tiff)
-BuildRequires:  golang(golang.org/x/image/webp)
-BuildRequires:  golang(golang.org/x/sys/unix)
-BuildRequires:  golang(howett.net/plist)
+#BuildRequires:  golang(github.com/alecthomas/chroma/v2)
+#BuildRequires:  golang(github.com/alecthomas/chroma/v2/lexers)
+#BuildRequires:  golang(github.com/alecthomas/chroma/v2/styles)
+#BuildRequires:  golang(github.com/ALTree/bigfloat)
+#BuildRequires:  golang(github.com/bmatcuk/doublestar/v4)
+#BuildRequires:  golang(github.com/disintegration/imaging)
+#BuildRequires:  golang(github.com/google/go-cmp/cmp)
+#BuildRequires:  golang(github.com/google/uuid)
+#BuildRequires:  golang(github.com/jamesruan/go-rfc1924/base85)
+#BuildRequires:  golang(github.com/seancfoley/ipaddress-go/ipaddr)
+#BuildRequires:  golang(github.com/shirou/gopsutil/v3/process)
+#BuildRequires:  golang(github.com/zeebo/xxh3)
+#BuildRequires:  golang(golang.org/x/exp/constraints)
+#BuildRequires:  golang(golang.org/x/exp/maps)
+#BuildRequires:  golang(golang.org/x/exp/rand)
+#BuildRequires:  golang(golang.org/x/exp/slices)
+#BuildRequires:  golang(golang.org/x/image/bmp)
+#BuildRequires:  golang(golang.org/x/image/tiff)
+#BuildRequires:  golang(golang.org/x/image/webp)
+#BuildRequires:  golang(golang.org/x/sys/unix)
+#BuildRequires:  golang(howett.net/plist)
 
 %if %{with test}
 # For tests:
@@ -190,8 +190,8 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
                                     -e 's|/usr/bin/env -S kitty|/usr/bin/kitty|g' \
                                     -i "{}" \;
 
-mkdir -p src/
-ln -s ../ src/kitty
+#mkdir -p src/
+#ln -s ../ src/kitty
 
 
 %build
@@ -202,10 +202,10 @@ ln -s ../ src/kitty
     --verbose                       \
     %{nil}
 
-export GOPATH=$(pwd):%{gopath}
-unset LDFLAGS
-mkdir -p _build/bin
-%gobuild -o _build/bin/kitten ./src/kitty/tools/cmd
+#export GOPATH=$(pwd):%{gopath}
+#unset LDFLAGS
+#mkdir -p _build/bin
+#%gobuild -o _build/bin/kitten ./src/kitty/tools/cmd
 
 %install
 # rpmlint fixes

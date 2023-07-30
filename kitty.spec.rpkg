@@ -27,8 +27,8 @@ Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
-#BuildRequires:  golang >= 1.20.0
-#BuildRequires:  go-rpm-macros
+BuildRequires:  golang >= 1.20.0
+BuildRequires:  go-rpm-macros
 BuildRequires:  git
 
 BuildRequires:  gnupg2
@@ -213,7 +213,7 @@ find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{__p
 find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
 
 cp -r linux-package %{buildroot}%{_prefix}
-install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
+#install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
 

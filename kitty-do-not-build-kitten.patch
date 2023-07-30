@@ -1,5 +1,5 @@
 diff --git a/gen-go-code.py b/gen-go-code.py
-index 128e6e0b7..1db9c72a3 100755
+index c8c33c244..16b121c8b 100755
 --- a/gen-go-code.py
 +++ b/gen-go-code.py
 @@ -12,6 +12,7 @@
@@ -10,7 +10,7 @@ index 128e6e0b7..1db9c72a3 100755
  from contextlib import contextmanager, suppress
  from functools import lru_cache
  from itertools import chain
-@@ -847,6 +848,7 @@ def main() -> None:
+@@ -851,6 +852,7 @@ def main() -> None:
              generate_unicode_names(src, dest)
      generate_ssh_kitten_data()
  
@@ -18,11 +18,48 @@ index 128e6e0b7..1db9c72a3 100755
      update_completion()
      update_at_commands()
      kitten_clis()
+diff --git a/kitty-do-not-build-kitten.patch b/kitty-do-not-build-kitten.patch
+index c62493198..e69de29bb 100644
+--- a/kitty-do-not-build-kitten.patch
++++ b/kitty-do-not-build-kitten.patch
+@@ -1,32 +0,0 @@
+-diff --git a/gen-go-code.py b/gen-go-code.py
+-index 128e6e0b7..1db9c72a3 100755
+---- a/gen-go-code.py
+-+++ b/gen-go-code.py
+-@@ -12,6 +12,7 @@
+- import subprocess
+- import sys
+- import tarfile
+-+import shutil
+- from contextlib import contextmanager, suppress
+- from functools import lru_cache
+- from itertools import chain
+-@@ -847,6 +848,7 @@ def main() -> None:
+-             generate_unicode_names(src, dest)
+-     generate_ssh_kitten_data()
+- 
+-+    shutil.copy('constants_generated.go','src/kitty')
+-     update_completion()
+-     update_at_commands()
+-     kitten_clis()
+-diff --git a/setup.py b/setup.py
+-index 202922c8d..e88aa1879 100755
+---- a/setup.py
+-+++ b/setup.py
+-@@ -981,6 +981,7 @@ def build_static_kittens(
+-         raise SystemExit(f'The version of go on this system ({current_go_version}) is too old. go >= {required_go_version} is needed')
+-     if not for_platform:
+-         update_go_generated_files(args, os.path.join(launcher_dir, appname))
+-+    return
+-     cmd = [go, 'build', '-v']
+-     vcs_rev = args.vcs_rev or get_vcs_rev()
+-     ld_flags = [f"-X 'kitty.VCSRevision={vcs_rev}'"]
 diff --git a/setup.py b/setup.py
-index 202922c8d..e88aa1879 100755
+index e7ee4799f..1e0f44f4c 100755
 --- a/setup.py
 +++ b/setup.py
-@@ -981,6 +981,7 @@ def build_static_kittens(
+@@ -964,6 +964,7 @@ def build_static_kittens(
          raise SystemExit(f'The version of go on this system ({current_go_version}) is too old. go >= {required_go_version} is needed')
      if not for_platform:
          update_go_generated_files(args, os.path.join(launcher_dir, appname))

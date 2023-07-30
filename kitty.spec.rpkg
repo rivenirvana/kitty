@@ -190,14 +190,15 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
                                     -e 's|/usr/bin/env -S kitty|/usr/bin/kitty|g' \
                                     -i "{}" \;
 
-mkdir -p src/
-ln -s ../ src/kitty
+#mkdir -p src/
+#ln -s ../ src/kitty
 
 
 %build
 %set_build_flags
 %{__python3} setup.py linux-package \
     --libdir-name=%{_lib}           \
+    --prefix=%{buildroot}%{_prefix} \
     --update-check-interval=0       \
     --verbose                       \
     %{nil}
@@ -228,8 +229,8 @@ rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
 %if %{with test}
 sed '/def test_ssh_shell_integration/a \
 \        self.skipTest("Skipping flaky test")' -i kitty_tests/ssh.py
-export %{gomodulesmode}
-export GOPATH=$(pwd):%{gopath}
+#export %{gomodulesmode}
+#export GOPATH=$(pwd):%{gopath}
 # Some tests ignores PATH env...
 mkdir -p kitty/launcher
 ln -s %{buildroot}%{_bindir}/%{name} kitty/launcher/

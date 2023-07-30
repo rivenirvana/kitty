@@ -55,6 +55,7 @@ BuildRequires:  pkgconfig(xkbcommon-x11)
 BuildRequires:  pkgconfig(xrandr)
 BuildRequires:  pkgconfig(zlib)
 BuildRequires:  pkgconfig(libcrypto)
+BuildRequires:  pkgconfig(libxxhash)
 
 BuildRequires:  golang(github.com/alecthomas/chroma/v2)
 BuildRequires:  golang(github.com/alecthomas/chroma/v2/lexers)

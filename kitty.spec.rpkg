@@ -197,15 +197,15 @@ ln -s ../../kittens src/kitty/kittens
 
 %build
 %set_build_flags
-export GOPATH=$(pwd):%{gopath}
-unset LDFLAGS
-mkdir -p _build/bin
 %{__python3} setup.py linux-package \
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
     --verbose                       \
     %{nil}
 
+export GOPATH=$(pwd):%{gopath}
+unset LDFLAGS
+mkdir -p _build/bin
 #%gobuild -o _build/bin/kitten ./src/kitty/tools/cmd
 
 %install

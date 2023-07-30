@@ -190,8 +190,9 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
                                     -e 's|/usr/bin/env -S kitty|/usr/bin/kitty|g' \
                                     -i "{}" \;
 
-mkdir -p src/
-ln -s ../ src/kitty
+mkdir -p src/kitty
+ln -s ../../tools src/kitty/tools
+ln -s ../../kittens src/kitty/kittens
 
 
 %build

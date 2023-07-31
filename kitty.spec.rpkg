@@ -199,6 +199,7 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
     --verbose                       \
+    --debug                         \
     %{nil}
 
 unset LDFLAGS

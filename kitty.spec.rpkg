@@ -1,3 +1,4 @@
+%global _missing_build_ids_terminate_build 0
 %global optflags %{optflags} -Wno-array-bounds
 
 %bcond_without test
@@ -189,8 +190,8 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
                                     -e 's|/usr/bin/env -S kitty|/usr/bin/kitty|g' \
                                     -i "{}" \;
 
-#mkdir -p src/
-#ln -s ../ src/kitty
+# mkdir -p src/
+# ln -s ../ src/kitty
 
 
 %build
@@ -199,10 +200,8 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
     --verbose                       \
-    --debug                         \
     %{nil}
 
-unset LDFLAGS
 
 %install
 # rpmlint fixes

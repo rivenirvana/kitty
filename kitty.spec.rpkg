@@ -194,6 +194,7 @@ mkdir -p src/
 ln -s ../ src/kitty
 
 go env
+cat $(go env GOROOT)/go.env
 
 %build
 %set_build_flags

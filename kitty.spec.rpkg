@@ -205,6 +205,7 @@ ln -s ../ src/kitty
 export GOPATH=$(pwd):%{gopath}
 unset LDFLAGS
 mkdir -p _build/bin
+go env
 %gobuild -o _build/bin/kitten ./src/kitty/tools/cmd
 
 %install

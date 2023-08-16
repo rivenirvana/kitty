@@ -13,7 +13,7 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # LGPL-2.1-or-later: kitty/iqsort.h
 # BSD-1-Clause: kitty/uthash.h
 # MIT: docs/_static/custom.css, shell-integration/ssh/bootstrap-utils.sh
-License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND BSD-1-Clause AND MIT
+License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND BSD-1-Clause AND MIT AND BSD-3-Clause AND Apache-2.0 AND MPL-2.0 AND (BSD-2-Clause AND BSD-3-Clause)
 URL:            https://sw.kovidgoyal.net/kitty
 Source0:        {{{git_repo_pack}}}
 
@@ -23,6 +23,7 @@ Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444
 
 # Don't build kitten inside setup.py, use gobuild macro in the spec instead to build with fedora flags
 Patch0:         kitty-do-not-build-kitten.patch
+## upstream patches
 
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
@@ -153,6 +154,7 @@ Cross-platform, fast, feature full, GPU based terminal emulator.
 
 The terminfo file for Kitty Terminal.
 
+# shell-integration package
 %package        shell-integration
 Summary:        Shell integration scripts for %{name}
 BuildArch:      noarch
@@ -193,8 +195,6 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{__python3}|g'  
 mkdir -p src/
 ln -s ../ src/kitty
 
-go env
-cat $(go env GOROOT)/go.env
 
 %build
 %set_build_flags
@@ -229,7 +229,7 @@ rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
 %check
 %if %{with test}
 sed '/def test_ssh_shell_integration/a \
-\        self.skipTest("Skipping flaky test")' -i kitty_tests/ssh.py
+\        self.skipTest("Skipping a flaky test")' -i kitty_tests/ssh.py
 export %{gomodulesmode}
 export GOPATH=$(pwd):%{gopath}
 # Some tests ignores PATH env...

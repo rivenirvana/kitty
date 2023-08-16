@@ -13,6 +13,28 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # LGPL-2.1-or-later: kitty/iqsort.h
 # BSD-1-Clause: kitty/uthash.h
 # MIT: docs/_static/custom.css, shell-integration/ssh/bootstrap-utils.sh
+# Go dependencies:
+# github.com/alecthomas/chroma: MIT
+# github.com/ALTree/bigfloat: MIT
+# github.com/bmatcuk/doublestar: MIT
+# github.com/disintegration/imaging: MIT
+# github.com/dlclark/regexp2: MIT
+# github.com/google/go-cmp/cmp: BSD-3-Clause
+# github.com/google/uuid: BSD-3-Clause
+# github.com/go-ole/go-ole: MIT
+# github.com/jamesruan/go-rfc1924/base85: MIT
+# github.com/lufia/plan9stats: BSD-3-Clause
+# github.com/power-devops/perfstat: MIT
+# github.com/seancfoley/bintree: Apache-2.0
+# github.com/seancfoley/ipaddress-go/ipaddr: Apache-2.0
+# github.com/shirou/gopsutil: BSD-3-Clause
+# github.com/shoenig/go-m1cpu: MPL-2.0
+# github.com/tklauser/go-sysconf: BSD-3-Clause
+# github.com/tklauser/numcpus: Apache-2.0
+# golang.org/x/exp: BSD-3-Clause
+# golang.org/x/image: BSD-3-Clause
+# golang.org/x/sys: BSD-3-Clause
+# howett.net/plist: BSD-2-Clause AND BSD-3-Clause
 License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND BSD-1-Clause AND MIT AND BSD-3-Clause AND Apache-2.0 AND MPL-2.0 AND (BSD-2-Clause AND BSD-3-Clause)
 URL:            https://sw.kovidgoyal.net/kitty
 Source0:        {{{git_repo_pack}}}

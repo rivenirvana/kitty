@@ -1,5 +1,5 @@
 diff --git a/gen-go-code.py b/gen-go-code.py
-index c8c33c244..16b121c8b 100755
+index 25b902fa1..fc54b722b 100755
 --- a/gen-go-code.py
 +++ b/gen-go-code.py
 @@ -12,6 +12,7 @@

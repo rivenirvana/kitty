@@ -22,7 +22,6 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # github.com/google/go-cmp/cmp: BSD-3-Clause
 # github.com/google/uuid: BSD-3-Clause
 # github.com/go-ole/go-ole: MIT
-# github.com/jamesruan/go-rfc1924/base85: MIT
 # github.com/lufia/plan9stats: BSD-3-Clause
 # github.com/power-devops/perfstat: MIT
 # github.com/seancfoley/bintree: Apache-2.0
@@ -62,7 +61,7 @@ BuildRequires:  libappstream-glib
 BuildRequires:  librsync-devel
 BuildRequires:  ncurses
 BuildRequires:  python3-devel >= 3.8
-BuildRequires:  wayland-devel
+BuildRequires:  wayland-devel >= 1.22
 
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(fontconfig)
@@ -70,7 +69,7 @@ BuildRequires:  pkgconfig(gl)
 BuildRequires:  pkgconfig(harfbuzz) >= 2.2
 BuildRequires:  pkgconfig(libcanberra)
 BuildRequires:  pkgconfig(libpng)
-BuildRequires:  pkgconfig(wayland-protocols)
+BuildRequires:  pkgconfig(wayland-protocols) >= 1.32
 BuildRequires:  pkgconfig(xcursor)
 BuildRequires:  pkgconfig(xi)
 BuildRequires:  pkgconfig(xinerama)
@@ -88,7 +87,6 @@ BuildRequires:  golang(github.com/bmatcuk/doublestar/v4)
 BuildRequires:  golang(github.com/disintegration/imaging)
 BuildRequires:  golang(github.com/google/go-cmp/cmp)
 BuildRequires:  golang(github.com/google/uuid)
-BuildRequires:  golang(github.com/jamesruan/go-rfc1924/base85)
 BuildRequires:  golang(github.com/seancfoley/ipaddress-go/ipaddr)
 BuildRequires:  golang(github.com/shirou/gopsutil/v3/process)
 BuildRequires:  golang(github.com/zeebo/xxh3)

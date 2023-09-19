@@ -19,7 +19,7 @@ index 25b902fa1..fc54b722b 100755
      update_at_commands()
      kitten_clis()
 diff --git a/setup.py b/setup.py
-index 5d866c993..3174fc47f 100755
+index 0350c0631..d94f4bfae 100755
 --- a/setup.py
 +++ b/setup.py
 @@ -970,6 +970,7 @@ def build_static_kittens(

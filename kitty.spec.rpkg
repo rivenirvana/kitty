@@ -229,8 +229,8 @@ export GOPATH=$(pwd):%{gopath}
 %set_build_flags
 %{__python3} setup.py linux-package \
     --libdir-name=%{_lib}           \
+    --skip_building_kitten=True     \
     --update-check-interval=0       \
-    --skip_building_kitten          \
     --verbose                       \
     %{nil}
 

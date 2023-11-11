@@ -58,10 +58,6 @@ Source0:        {{{git_repo_pack}}}
 # * https://github.com/kovidgoyal/kitty/pull/2088
 Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444e4f4994008f0d2dcb41e49389f4/kitty/data/%{name}.appdata.xml
 
-# Don't build kitten inside setup.py, use gobuild macro in the spec instead to build with fedora flags
-Patch0:         kitty-do-not-build-kitten.patch
-## upstream patches
-
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
@@ -234,6 +230,7 @@ export GOPATH=$(pwd):%{gopath}
 %{__python3} setup.py linux-package \
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
+    --skip_building_kitten          \
     --verbose                       \
     %{nil}
 

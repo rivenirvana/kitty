@@ -253,7 +253,7 @@ install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
 %if %{with doc}
 # rpmlint fixes
 #rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
-   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
+#   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
 %endif
 
 

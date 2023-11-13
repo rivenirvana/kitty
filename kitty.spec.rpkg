@@ -65,6 +65,7 @@ Patch0:         kitty-do-not-build-kitten.patch
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
+BuildRequires:  git
 BuildRequires:  golang >= 1.21.0
 BuildRequires:  go-rpm-macros
 

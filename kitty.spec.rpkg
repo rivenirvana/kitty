@@ -58,10 +58,13 @@ Source0:        {{{git_repo_pack}}}
 # * https://github.com/kovidgoyal/kitty/pull/2088
 Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444e4f4994008f0d2dcb41e49389f4/kitty/data/%{name}.appdata.xml
 
+# Don't build kitten inside setup.py, use gobuild macro in the spec instead to build with fedora flags
+Patch0:         kitty-do-not-build-kitten.patch
+## upstream patches
+
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
-BuildRequires:  git
 BuildRequires:  golang >= 1.21.0
 BuildRequires:  go-rpm-macros
 
@@ -230,7 +233,6 @@ export GOPATH=$(pwd):%{gopath}
 %{__python3} setup.py linux-package \
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
-    --skip-building-kitten          \
     --verbose                       \
     %{nil}
 
@@ -242,8 +244,8 @@ unset LDFLAGS
 
 %install
 # rpmlint fixes
-#find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{__python3}@d}' "{}" \;
-#find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
+find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{__python3}@d}' "{}" \;
+find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
 
 cp -r linux-package %{buildroot}%{_prefix}
 install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
@@ -252,8 +254,8 @@ install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
 
 %if %{with doc}
 # rpmlint fixes
-#rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
-#   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
+rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
+   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
 %endif
 
 

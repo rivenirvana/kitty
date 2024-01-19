@@ -249,8 +249,8 @@ install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
 
 # rpmlint fixes
-rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
-   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
+#rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
+#   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
 
 
 %check

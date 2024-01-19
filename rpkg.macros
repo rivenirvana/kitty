@@ -64,7 +64,7 @@ function git_release {
         future)
             x="$x.${master_commits}.$(git_revision).${master_hash}" ;;
         2???-??-??)
-            x="0.${master_commits}.${master_hash}" ;;
+            x="1.${master_commits}.${master_hash}" ;;
         nightly)
             x="$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
     esac

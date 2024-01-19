@@ -56,6 +56,7 @@ Source0:        {{{git_repo_pack}}}
 # Add AppData manifest file
 # * https://github.com/kovidgoyal/kitty/pull/2088
 Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444e4f4994008f0d2dcb41e49389f4/kitty/data/%{name}.appdata.xml
+Patch0:         kitty-do-not-build-kitten.patch
 
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
@@ -229,7 +230,6 @@ export OVERRIDE_CFLAGS="-std=c11 -fwrapv -fvisibility=hidden"
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
     --verbose                       \
-    --skip-building-kitten          \
     %{nil}
 
 %if %{without bundled}
@@ -249,8 +249,8 @@ install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
 
 # rpmlint fixes
-#rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
-#   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
+rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
+   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
 
 
 %check
@@ -291,7 +291,7 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 %{_datadir}/icons/hicolor/*/*/*.{png,svg}
 %{_libdir}/%{name}/
 %exclude %{_libdir}/%{name}/shell-integration
-#%{_mandir}/man{1,5}/*.{1,5}*
+%{_mandir}/man{1,5}/*.{1,5}*
 %{_metainfodir}/*.xml
 
 %files kitten

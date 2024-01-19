@@ -46,7 +46,9 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # howett.net/plist: BSD-2-Clause AND BSD-3-Clause
 License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND BSD-1-Clause
 URL:            https://sw.kovidgoyal.net/kitty
-Source0:        {{{git_repo_pack}}}
+Source0:        https://github.com/kovidgoyal/kitty/releases/download/v%{version}/%{name}-%{version}.tar.xz
+Source4:        https://github.com/kovidgoyal/kitty/releases/download/v%{version}/%{name}-%{version}.tar.xz.sig
+Source5:        https://calibre-ebook.com/signatures/kovid.gpg
 # git clone https://github.com/kovidgoyal/kitty.git
 # cd kitty
 # git checkout v%%{version}
@@ -202,7 +204,11 @@ This package contains the documentation for %{name}.
 
 
 %prep
-{{{git_setup_macro path="$GIT_ROOT"}}}
+%{gpgverify} --keyring='%{SOURCE5}' --signature='%{SOURCE4}' --data='%{SOURCE0}'
+%autosetup -p1
+%if %{with bundled}
+%autosetup -NDT -a6
+%endif
 
 # Changing sphinx theme to classic
 sed "s/html_theme = 'furo'/html_theme = 'classic'/" -i docs/conf.py
@@ -249,8 +255,8 @@ install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
 
 # rpmlint fixes
-#rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
-#   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
+rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
+   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
 
 
 %check

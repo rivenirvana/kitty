@@ -62,7 +62,7 @@ Patch0:         kitty-do-not-build-kitten.patch
 ExcludeArch:    %{ix86}
 
 BuildRequires:  git
-BuildRequires:  golang >= 1.21.0
+BuildRequires:  golang >= 1.22.0
 BuildRequires:  go-rpm-macros
 
 BuildRequires:  gnupg2

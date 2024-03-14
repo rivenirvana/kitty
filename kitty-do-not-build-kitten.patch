@@ -1,5 +1,5 @@
 diff --git a/setup.py b/setup.py
-index d9d608264..8b8ed4fa3 100755
+index e26e2f4a9..8d4f0393d 100755
 --- a/setup.py
 +++ b/setup.py
 @@ -1100,6 +1100,7 @@ def build_static_kittens(

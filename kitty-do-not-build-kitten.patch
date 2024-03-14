@@ -1,8 +1,8 @@
 diff --git a/setup.py b/setup.py
-index e26e2f4a9..8d4f0393d 100755
+index a75b7ed9b..55debad8a 100755
 --- a/setup.py
 +++ b/setup.py
-@@ -1100,6 +1100,7 @@ def build_static_kittens(
+@@ -1103,6 +1103,7 @@ def build_static_kittens(
      if args.skip_building_kitten:
          print('Skipping building of the kitten binary because of a command line option. Build is incomplete', file=sys.stderr)
          return ''

@@ -23,11 +23,12 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # github.com/alecthomas/chroma: MIT
 # github.com/ALTree/bigfloat: MIT
 # github.com/bmatcuk/doublestar: MIT
-# github.com/disintegration/imaging: MIT
 # github.com/dlclark/regexp2: MIT
+# github.com/edwvee/exiffix: MIT
 # github.com/google/go-cmp/cmp: BSD-3-Clause
 # github.com/google/uuid: BSD-3-Clause
 # github.com/klauspost/cpuid: MIT
+# github.com/kovidgoyal/imaging: MIT
 # github.com/go-ole/go-ole: MIT
 # github.com/lufia/plan9stats: BSD-3-Clause
 # github.com/power-devops/perfstat: MIT

@@ -1,8 +1,5 @@
 %bcond test 1
-%bcond bundled 0
-%if 0%{?epel}
 %bcond bundled 1
-%endif
 %if %{with bundled}
 %global gomodulesmode GO111MODULE=on
 %endif

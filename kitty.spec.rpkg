@@ -4,7 +4,6 @@
 %global gomodulesmode GO111MODULE=on
 %endif
 
-%global goipath kitty
 
 Name:           {{{git_name name="kitty"}}}
 Version:        {{{git_version}}}

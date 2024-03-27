@@ -237,7 +237,6 @@ export GOPATH=$(pwd):%{gopath}
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
     --verbose                       \
-    --skip-building-kitten          \
     --ignore-compiler-warnings      \
     %{nil}
 
@@ -296,6 +295,9 @@ export PYTHONPATH=$(pwd)
 appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/*.xml
 desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 
+find . -name "*mod*"
+echo $(go env GOMODCACHE)
+ls -la $(go env GOMODCACHE)/@v/modules.txt
 
 %files
 %license LICENSE

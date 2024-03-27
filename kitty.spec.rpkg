@@ -296,8 +296,8 @@ appstream-util validate-relax --nonet %{buildroot}%{_metainfodir}/*.xml
 desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 
 find / -name "*mod*"
-echo $(go env GOMODCACHE)
-ls -la $(go env GOMODCACHE)/@v/modules.txt
+find / -name "*vendor*"
+ls -la $(go env GOMODCACHE)
 
 %files
 %license LICENSE

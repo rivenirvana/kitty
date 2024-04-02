@@ -277,7 +277,7 @@ mkdir -p "$docdir"
 cp -r "$docsrc" "$docdir"
 ls -laR linux-package/share/doc/kitty/html
 cp -r linux-package %{buildroot}%{_prefix}
-ls -laR %{docdir}/kitty/html
+ls -laR %{buildroot}%{_datadir}/doc/%{name}
 install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml

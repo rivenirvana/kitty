@@ -260,7 +260,7 @@ find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec
 mansrc=docs/_build/man
 mandir=linux-package/share/man
 for lvl in {1..15}; do
-    manpgs="$mansrc"/*."$lvl"
+    manpgs=$(echo "$mansrc"/*."$lvl")
     manlvl="$mandir"/man"$lvl"
     [[ -n "$manpgs" ]] && mkdir -p "$manlvl" && cp "$manpgs" "$manlvl"
 done

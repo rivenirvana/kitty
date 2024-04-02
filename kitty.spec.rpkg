@@ -261,7 +261,7 @@ mansrc="docs/_build/man"
 mandir="linux-package/share/man"
 for lvl in {1..15}; do
     manpgs=("$mansrc"/*."$lvl")
-    if [[ -n "${manpgs[@]}" ]]; then
+    if [[ "${#manpgs[@]}" -gt 0 ]]; then
         manlvl="$mandir"/man"$lvl"
         mkdir -p "$manlvl"
         cp "${manpgs[@]}" "$manlvl"

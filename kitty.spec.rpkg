@@ -62,6 +62,7 @@ Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
+BuildRequires:  git-core
 BuildRequires:  golang >= 1.22.0
 BuildRequires:  go-rpm-macros
 

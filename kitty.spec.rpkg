@@ -62,7 +62,7 @@ Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
-BuildRequires:  git-core
+BuildRequires:  git
 BuildRequires:  golang >= 1.22.0
 BuildRequires:  go-rpm-macros
 
@@ -235,7 +235,6 @@ export GOPATH=$(pwd):%{gopath}
 
 %build
 %set_build_flags
-make && make docs
 %{python3} setup.py linux-package   \
     --libdir-name=%{_lib}           \
     --update-check-interval=0       \
@@ -244,6 +243,7 @@ make && make docs
     --ignore-compiler-warnings      \
     %{nil}
 
+make && make docs
 %if %{without bundled}
 export GOPATH=$(pwd):%{gopath}
 %endif

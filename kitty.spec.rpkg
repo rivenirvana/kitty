@@ -248,7 +248,7 @@ export GOPATH=$(pwd):%{gopath}
 %endif
 unset LDFLAGS
 %gobuild -o _build/bin/kitten %{?with_bundled:./tools/cmd}%{!?with_bundled:./src/kitty/tools/cmd}
-export KITTEN_EXE_FOR_DOCS=_build/bin/kitten
+export KITTEN_EXE_FOR_DOCS=$(pwd)/_build/bin/kitten
 make docs
 
 %install

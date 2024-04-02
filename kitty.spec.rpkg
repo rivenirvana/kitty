@@ -257,9 +257,9 @@ find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{pyt
 find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
 
 # copy_man_pages
-shopt -s nullglob
 mansrc="docs/_build/man"
 mandir="linux-package/share/man"
+shopt -s nullglob
 for lvl in {1..15}; do
     manpgs=("$mansrc"/*."$lvl")
     if [[ -n "${manpgs[@]}" ]]; then
@@ -274,7 +274,9 @@ shopt -u nullglob
 docsrc="docs/_build/html"
 docdir="linux-package/share/doc/%{name}/html"
 mkdir -p "$docdir"
+shopt -s dotglob
 cp -r "$docsrc"/* "$docdir"
+shopt -u dotglob
 
 cp -r linux-package %{buildroot}%{_prefix}
 install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten

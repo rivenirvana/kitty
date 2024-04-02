@@ -243,12 +243,12 @@ export GOPATH=$(pwd):%{gopath}
     --ignore-compiler-warnings      \
     %{nil}
 
-make && make docs
 %if %{without bundled}
 export GOPATH=$(pwd):%{gopath}
 %endif
 unset LDFLAGS
 %gobuild -o _build/bin/kitten %{?with_bundled:./tools/cmd}%{!?with_bundled:./src/kitty/tools/cmd}
+make docs
 
 %install
 # rpmlint fixes

@@ -250,6 +250,7 @@ unset LDFLAGS
 %gobuild -o _build/bin/kitten %{?with_bundled:./tools/cmd}%{!?with_bundled:./src/kitty/tools/cmd}
 export KITTEN_EXE_FOR_DOCS=$(pwd)/_build/bin/kitten
 make docs
+ls -laR docs/_build
 
 %install
 # rpmlint fixes

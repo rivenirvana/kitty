@@ -250,17 +250,36 @@ unset LDFLAGS
 %gobuild -o _build/bin/kitten %{?with_bundled:./tools/cmd}%{!?with_bundled:./src/kitty/tools/cmd}
 export KITTEN_EXE_FOR_DOCS=$(pwd)/_build/bin/kitten
 make docs
-ls -laR docs/_build
 
 %install
 # rpmlint fixes
 find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{python3}@d}' "{}" \;
 find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
 
+# copy_man_pages
+mandir=linux-package/share/man
+mansrc=docs/_build/man
+for lvl in {1..15}; do
+    manlvl="$mandir"/man"$lvl"
+    manpgs=$(ls "$mansrc"/*."$lvl" 2>/dev/null)
+    [[ -n "$manpgs" ]] && mkdir -p "$manlvl" && cp "$manpgs" "$manlvl"
+done
+
+# copy_html_docs
+docdir=linux-package/share/doc/%{name}/html
+docsrc=docs/_build/html
+mkdir -p "$docdir"
+cp -r "$docsrc" "$docdir"
+
 cp -r linux-package %{buildroot}%{_prefix}
 install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
+
+# rpmlint fixes
+rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
+   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
+
 
 %check
 %if %{with test}

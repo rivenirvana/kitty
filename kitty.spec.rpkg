@@ -248,7 +248,7 @@ export GOPATH=$(pwd):%{gopath}
 %endif
 unset LDFLAGS
 %gobuild -o _build/bin/kitten %{?with_bundled:./tools/cmd}%{!?with_bundled:./src/kitty/tools/cmd}
-export KITTEN_EXE_FOR_DOCS=$(pwd)/_build/bin/kitten
+export KITTEN_EXE_FOR_DOCS=%{_builddir}/_build/bin/kitten
 make docs
 
 %install
@@ -260,11 +260,6 @@ cp -r linux-package %{buildroot}%{_prefix}
 install -m0755 -Dp _build/bin/kitten %{buildroot}%{_bindir}/kitten
 
 install -m0644 -Dp %{SOURCE1} %{buildroot}%{_metainfodir}/%{name}.appdata.xml
-
-# rpmlint fixes
-rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
-   %{buildroot}%{_datadir}/doc/%{name}/html/.nojekyll
-
 
 %check
 %if %{with test}

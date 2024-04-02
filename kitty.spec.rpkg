@@ -257,16 +257,18 @@ find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{pyt
 find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
 
 # copy_man_pages
+shopt -s nullglob
 mansrc="docs/_build/man"
 mandir="linux-package/share/man"
 for lvl in {1..15}; do
     manpgs=("$mansrc"/*."$lvl")
-    if [[ "${#manpgs[@]}" -gt 0 ]]; then
+    if [[ -n "${manpgs[@]}" ]]; then
         manlvl="$mandir"/man"$lvl"
         mkdir -p "$manlvl"
         cp "${manpgs[@]}" "$manlvl"
     fi
 done
+shopt -u nullglob
 
 # copy_html_docs
 docsrc="docs/_build/html"

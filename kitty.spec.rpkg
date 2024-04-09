@@ -248,6 +248,8 @@ export GOPATH=$(pwd):%{gopath}
 %endif
 unset LDFLAGS
 %gobuild -o _build/bin/kitten %{?with_bundled:./tools/cmd}%{!?with_bundled:./src/kitty/tools/cmd}
+
+# build docs
 export KITTEN_EXE_FOR_DOCS=$(pwd)/_build/bin/kitten
 make docs
 
@@ -256,7 +258,7 @@ make docs
 find linux-package -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{python3}@d}' "{}" \;
 find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
 
-# copy_man_pages
+# copy_man_pages()
 mansrc="docs/_build/man"
 mandir="linux-package/share/man"
 lvls="15"
@@ -272,7 +274,7 @@ for (( i=0; i<${#lvls}; i++ )); do
 done
 shopt -u nullglob
 
-# copy_html_docs
+# copy_html_docs()
 docsrc="docs/_build/html"
 docdir="linux-package/share/doc/%{name}/html"
 mkdir -p "$docdir"

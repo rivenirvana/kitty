@@ -1,6 +1,6 @@
 %bcond test 1
-%bcond bundled 0
-%if 0%{?fedora}
+%bcond bundled 1
+%if 0%{?epel}
 %bcond bundled 1
 %endif
 %if %{with bundled}
@@ -28,11 +28,11 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # github.com/bmatcuk/doublestar: MIT
 # github.com/dlclark/regexp2: MIT
 # github.com/edwvee/exiffix: MIT
+# github.com/go-ole/go-ole: MIT
 # github.com/google/go-cmp/cmp: BSD-3-Clause
 # github.com/google/uuid: BSD-3-Clause
 # github.com/klauspost/cpuid: MIT
 # github.com/kovidgoyal/imaging: MIT
-# github.com/go-ole/go-ole: MIT
 # github.com/lufia/plan9stats: BSD-3-Clause
 # github.com/power-devops/perfstat: MIT
 # github.com/seancfoley/bintree: Apache-2.0
@@ -46,6 +46,7 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # golang.org/x/image: BSD-3-Clause
 # golang.org/x/sys: BSD-3-Clause
 # howett.net/plist: BSD-2-Clause AND BSD-3-Clause
+# github.com/rwcarlsen/goexif: BSD-2-Clause
 License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND BSD-1-Clause AND (MIT AND CC0-1.0) AND BSD-2-Clause AND CC0-1.0
 URL:            https://sw.kovidgoyal.net/kitty
 Source0:        {{{git_repo_pack}}}

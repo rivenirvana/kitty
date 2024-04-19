@@ -10,8 +10,16 @@ function cached {
 function git_revision {
     cached git_revision && return
 
-    # count commits not on master
-    output "$(git log --oneline origin/master.. | wc -l)"
+    # find last merge
+    declare last_merge rest
+    read last_merge rest <<<"$(git log --merges --oneline -n1)"
+    [[ -n $last_merge ]] || abort "failed to find last merge"
+
+    # count commits since last merge, might be zero
+    declare count
+    count=$(git log --oneline HEAD "^$last_merge" | wc -l)
+
+    output "$((count + 1))"
 }
 
 function git_log_version {
@@ -19,57 +27,42 @@ function git_log_version {
 
     declare changelog_version
     changelog_version="$(awk '$1 ~ /^[0-9]+\./ && $2 ~ /^\[/{print; exit}' < docs/changelog.rst)"
+
     output "$changelog_version"
 }
 
 function git_version {
     cached git_version && return
 
-    declare v rest
-    read v rest <<< "$(git_log_version)"
+    declare v x
+    read v x <<< "$(git_log_version)"
+
     output "$v"
 }
 
 function git_release {
     cached git_release && return
 
+    declare v x
+    read v x <<< "$(git_log_version)"
+
     # git describe --first-parent origin/master
     # v0.4.0-1080-g971e0ca90
     declare master_describe master_tag master_commits master_hash tagged
-    master_describe=$(git describe --first-parent origin/master)
     tagged=false
+    master_describe=$(git describe --first-parent origin/master)
     read master_tag master_commits master_hash <<< "${master_describe//-/ }"
-
-    if [[ $master_tag == v* && $master_commits -gt 0 && -n $master_hash ]]
-    then
-        tagged=true
-    else
-        die "failed git describe"
-    fi
-
-    # get the future kitty version from the changelog
-    declare v x rest
-    read v x rest <<< "$(git_log_version)"
+    [[ $master_commits -eq 0 ]] && tagged=true
 
     if $tagged
     then
-        # remove brackets from $x
-        x=${x#\[}; x=${x%\]}
+        x=${x#\[}; x=${x%\]};
+        [[ "$x" != "future" ]] && x="stable"
     else
         x="nightly"
-        master_hash=$(git rev-parse --short origin/master)
     fi
 
-    case $x in
-        future)
-            x="$x.${master_commits}.$(git_revision).${master_hash}" ;;
-        2???-??-??)
-            x="1.${master_commits}.${master_hash}" ;;
-        nightly)
-            x="$x.$(date +'%y%m%d').$(git_revision).${master_hash}" ;;
-    esac
-
-    output "$x"
+    output "$(git_revision).${master_commits}.$x.${master_hash}"
 }
 
 function git_changelog_date {

@@ -48,18 +48,17 @@ function git_release {
 
     # git describe --first-parent origin/master
     # v0.4.0-1080-g971e0ca90
-    declare master_describe master_tag master_commits master_hash tagged
-    tagged=false
+    declare master_describe master_tag master_commits master_hash ahead
+    ahead=true
     master_describe=$(git describe --first-parent origin/master)
     read master_tag master_commits master_hash <<< "${master_describe//-/ }"
-    [[ $master_commits -eq 0 ]] && tagged=true
+    [[ $master_commits -eq 0 ]] && ahead=false
 
-    if $tagged
+    if $ahead
     then
-        x=${x#\[}; x=${x%\]};
-        [[ "$x" != "future" ]] && x="stable"
-    else
         x="nightly"
+    else
+        [[ "$x" != "[future]" ]] && x="stable"
     fi
 
     output "$(git_revision).${master_commits}.$x.${master_hash}"

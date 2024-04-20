@@ -22,7 +22,7 @@ function git_revision {
     output "$((count + 1))"
 }
 
-function git_log_version {
+function git_log_tag {
     cached git_log_version && return
 
     declare changelog_version
@@ -34,17 +34,17 @@ function git_log_version {
 function git_version {
     cached git_version && return
 
-    declare v x
-    read v x <<< "$(git_log_version)"
+    declare version label
+    read version label <<< "$(git_log_tag)"
 
-    output "$v"
+    output "$version"
 }
 
 function git_release {
     cached git_release && return
 
-    declare v x
-    read v x <<< "$(git_log_version)"
+    declare version label
+    read version label <<< "$(git_log_tag)"
 
     # git describe --first-parent origin/master
     # v0.4.0-1080-g971e0ca90
@@ -56,12 +56,12 @@ function git_release {
 
     if $ahead
     then
-        x="nightly"
+        label="nightly"
     else
-        [[ "$x" != "[future]" ]] && x="stable"
+        [[ "$label" != "[future]" ]] && label="stable"
     fi
 
-    output "${commits}.$(git_revision).$x.${hash}"
+    output "${commits}.$(git_revision).$label.${hash}"
 }
 
 function git_changelog_date {

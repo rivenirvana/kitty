@@ -52,14 +52,8 @@ function git_release {
     ahead=true
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
-    [[ $commits -eq 0 ]] && ahead=false
-
-    if $ahead
-    then
-        label="nightly"
-    else
-        [[ "$label" != "[future]" ]] && label="stable"
-    fi
+    [[ $commits != 0 ]] && ahead=true || ahead=false
+    [[ $ahead ]] && label="future" || label="stable"
 
     output "${commits}.$(git_revision).$label.${hash}"
 }

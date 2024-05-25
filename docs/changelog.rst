@@ -50,7 +50,7 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.35.0 [future]
+0.35.0 [2024-05-25]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - kitten @ run: A new remote control command to run a process on the machine kitty is running on and get its output (:iss:`7429`)
@@ -99,6 +99,8 @@ Detailed list of changes
 - macOS: Fix --start-as=fullscreen not working when another window is already fullscreen (:iss:`7448`)
 
 - Add option :option:`kitten @ detach-window --stay-in-tab` to keep focus in the currently active tab when moving windows (:iss:`7468`)
+
+- macOS: Fix changing window chrome/colors while in traditional fullscreen causing the titlebar to become visible (:iss:`7469`)
 
 0.34.1 [2024-04-19]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

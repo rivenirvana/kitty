@@ -52,10 +52,13 @@ function git_release {
     ahead=true
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
-    [[ $commits != 0 ]] && ahead=true || ahead=false
-    [[ $ahead ]] && label="future" || label="stable"
-
-    output "${commits}.$(git_revision).$label.${hash}"
+    [[ $commits == '' ]] && commits=0
+    [[ $commits > 0 ]] && ahead=true || ahead=false
+    if [[ $ahead ]]; then
+        output "${commits}.$(git_revision).future.${hash}"
+    else
+        output "${commits}.$(git_revision).stable"
+    fi
 }
 
 function git_changelog_date {

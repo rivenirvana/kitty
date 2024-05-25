@@ -47,17 +47,14 @@ function git_release {
     read version label <<< "$(git_log_tag)"
 
     # git describe --first-parent origin/master
-    # v0.4.0-1080-g971e0ca90
-    declare describe tag commits hash ahead
-    ahead=true
+    # v0.4.0-1080-g971e0ca90 or v0.4.0
+    declare describe tag commits hash
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
-    [[ $commits == '' ]] && commits=0
-    [[ $commits > 0 ]] && ahead=1 || ahead=0
-    if [[ $ahead ]]; then
+    if [[ "${commits}" != '' ]]; then
         output "${commits}.$(git_revision).future.${hash}"
     else
-        output "${commits}.$(git_revision).stable"
+        output "0.$(git_revision).stable"
     fi
 }
 

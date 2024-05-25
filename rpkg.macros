@@ -52,9 +52,9 @@ function git_release {
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
     if [[ "${commits}" != '' ]]; then
-        output "${commits}.$(git_revision).future.${hash}"
+        output "$(git_revision).${commits}.future.${hash}"
     else
-        output "0.$(git_revision).stable"
+        output "$(git_revision).0.stable"
     fi
 }
 

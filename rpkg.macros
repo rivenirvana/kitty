@@ -53,7 +53,7 @@ function git_release {
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
     [[ $commits == '' ]] && commits=0
-    [[ $commits > 0 ]] && ahead=true || ahead=false
+    [[ $commits > 0 ]] && ahead=1 || ahead=0
     if [[ $ahead ]]; then
         output "${commits}.$(git_revision).future.${hash}"
     else

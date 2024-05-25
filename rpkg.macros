@@ -48,14 +48,15 @@ function git_release {
 
     # git describe --first-parent origin/master
     # v0.4.0-1080-g971e0ca90 or v0.4.0
-    declare describe tag commits hash
+    declare describe tag commits hash prefix
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
-    if [[ "${commits}" != '' ]]; then
-        output "$(git_revision).${commits}.future.${hash}"
-    else
-        output "$(git_revision).0.stable"
-    fi
+
+    [[ -z "${commits}" ]] && commits=0
+    [[ -n "${hash}" ]] && hash=".${hash}"
+    [[ "${label}" == '[future]' ]] && prefix='future' || prefix='stable'
+
+    output "${prefix}.${commits}.$(git_revision)${hash}"
 }
 
 function git_changelog_date {

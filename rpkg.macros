@@ -46,8 +46,6 @@ function git_release {
     declare version label
     read version label <<< "$(git_log_tag)"
 
-    # git describe --first-parent origin/master
-    # v0.4.0-1080-g971e0ca90 or v0.4.0
     declare describe tag commits hash prefix
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"

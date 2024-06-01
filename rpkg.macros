@@ -16,10 +16,12 @@ function git_revision {
     [[ -n $last_merge ]] || abort "failed to find last merge"
 
     # count commits since last merge, might be zero
-    declare count
+    declare count tag
     count=$(git log --oneline HEAD "^$last_merge" | wc -l)
+    count+=1
+    [[ ${count} < 10 ]] && tag="0${count}" || tag="${count}"
 
-    output "$((count + 1))"
+    output "rev${tag}"
 }
 
 function git_log_tag {
@@ -50,11 +52,11 @@ function git_release {
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<< "${describe//-/ }"
 
-    [[ -z "${commits}" ]] && commits=0
+    [[ -z "${commits}" ]] && commits=1
     [[ -n "${hash}" ]] && hash=".${hash}"
     [[ "${label}" == '[future]' ]] && prefix='future' || prefix='stable'
 
-    output "${prefix}.${commits}.$(git_revision)${hash}"
+    output "${commits}.${prefix}.$(git_revision)${hash}"
 }
 
 function git_changelog_date {

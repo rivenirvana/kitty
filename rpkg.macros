@@ -16,11 +16,12 @@ function git_revision {
     [[ -n $last_merge ]] || abort "failed to find last merge"
 
     # count commits since last merge, might be zero
-    declare count
+    declare count tag
     count=$(git log --oneline HEAD "^$last_merge" | wc -l)
-    count+=1
+    count=$((count + 1))
+    [[ ${count} -lt 10 ]] && tag="0${count}" || tag="${count}"
 
-    output "rev${count}"
+    output "rev${tag}"
 }
 
 function git_log_tag {

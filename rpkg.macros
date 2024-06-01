@@ -18,8 +18,9 @@ function git_revision {
     # count commits since last merge, might be zero
     declare count
     count=$(git log --oneline HEAD "^$last_merge" | wc -l)
+    count+=1
 
-    output "rev$((count + 1))"
+    output "rev${count}"
 }
 
 function git_log_tag {

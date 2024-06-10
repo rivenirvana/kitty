@@ -42,6 +42,7 @@ In addition to kitty, this protocol is also implemented in:
   <https://github.com/dankamongmen/notcurses/issues/2131>`__
 * The `crossterm library
   <https://github.com/crossterm-rs/crossterm/pull/688>`__
+* The `textual library <https://github.com/Textualize/textual/pull/4631>`__
 * The `Vim text editor <https://github.com/vim/vim/commit/63a2e360cca2c70ab0a85d14771d3259d4b3aafa>`__
 * The `Emacs text editor via the kkp package <https://github.com/benjaminor/kkp>`__
 * The `Neovim text editor <https://github.com/neovim/neovim/pull/18181>`__

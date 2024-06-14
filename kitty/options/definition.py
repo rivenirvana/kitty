@@ -296,7 +296,7 @@ opt('cursor', '#cccccc',
     option_type='to_color_or_none',
     long_text='''
 Default cursor color. If set to the special value :code:`none` the cursor will
-be rendered with a "reverse video" effect. It's color will be the color of the
+be rendered with a "reverse video" effect. Its color will be the color of the
 text in the cell it is over and the text will be rendered with the background
 color of the cell. Note that if the program running in the terminal sets a
 cursor color, this takes precedence. Also, the cursor colors are modified if
@@ -1160,6 +1160,17 @@ faded and one being fully opaque.
 '''
     )
 
+opt('window_logo_scale', '0', option_type='window_logo_scale', ctype='!window_logo_scale', long_text='''
+The percentage (0-100] of the window size to which the logo should scale. Using a single
+number means the logo is scaled to that percentage of the shortest window dimension, while preseving
+aspect ratio of the logo image.
+
+Using two numbers means the width and height of the logo are scaled to the respective
+percentage of the window's width and height.
+
+Using zero as the percentage disables scaling in that dimension. A single zero (the default)
+disables all scaling of the window logo.
+''')
 
 opt('resize_debounce_time', '0.1 0.5',
     option_type='resize_debounce_time', ctype='!resize_debounce_time',

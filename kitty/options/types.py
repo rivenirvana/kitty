@@ -330,6 +330,7 @@ option_names = (  # {{{
  'cursor_beam_thickness',
  'cursor_blink_interval',
  'cursor_shape',
+ 'cursor_shape_unfocused',
  'cursor_stop_blinking_after',
  'cursor_text_color',
  'cursor_underline_thickness',
@@ -503,6 +504,7 @@ class Options:
     cursor_beam_thickness: float = 1.5
     cursor_blink_interval: float = -1.0
     cursor_shape: int = 1
+    cursor_shape_unfocused: int = 0
     cursor_stop_blinking_after: float = 15.0
     cursor_text_color: typing.Optional[kitty.fast_data_types.Color] = Color(17, 17, 17)
     cursor_underline_thickness: float = 2.0

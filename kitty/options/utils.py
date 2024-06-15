@@ -44,7 +44,7 @@ from kitty.conf.utils import (
     unit_float,
 )
 from kitty.constants import is_macos
-from kitty.fast_data_types import CURSOR_BEAM, CURSOR_BLOCK, CURSOR_UNDERLINE, Color, Shlex, SingleKey
+from kitty.fast_data_types import CURSOR_BEAM, CURSOR_BLOCK, CURSOR_UNDERLINE, NO_CURSOR_SHAPE, Color, Shlex, SingleKey
 from kitty.fonts import FontFeature, FontModification, ModificationType, ModificationUnit, ModificationValue
 from kitty.key_names import character_key_name_aliases, functional_key_name_aliases, get_key_name_lookup
 from kitty.rgb import color_as_int
@@ -524,6 +524,12 @@ cshapes = {
     'beam': CURSOR_BEAM,
     'underline': CURSOR_UNDERLINE
 }
+cshapes_unfocused = {
+    'block': CURSOR_BLOCK,
+    'beam': CURSOR_BEAM,
+    'underline': CURSOR_UNDERLINE,
+    'hollow': NO_CURSOR_SHAPE
+}
 
 
 def to_cursor_shape(x: str) -> int:
@@ -533,6 +539,17 @@ def to_cursor_shape(x: str) -> int:
         raise ValueError(
             'Invalid cursor shape: {} allowed values are {}'.format(
                 x, ', '.join(cshapes)
+            )
+        )
+
+
+def to_cursor_unfocused_shape(x: str) -> int:
+    try:
+        return cshapes_unfocused[x.lower()]
+    except KeyError:
+        raise ValueError(
+            'Invalid unfocused cursor shape: {} allowed values are {}'.format(
+                x, ', '.join(cshapes_unfocused)
             )
         )
 

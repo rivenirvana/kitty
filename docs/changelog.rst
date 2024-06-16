@@ -53,9 +53,13 @@ Detailed list of changes
 0.36.0 [future]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- A new option, :opt:`window_logo_scale` to specify how window logo are scaled with respect to the size of the window containing the logo (:pull:`7534`)
+- A new option, :opt:`window_logo_scale` to specify how window logos are scaled with respect to the size of the window containing the logo (:pull:`7534`)
 
 - A new option, :opt:`cursor_shape_unfocused` to specify the shape of the text cursor in unfocused OS windows (:pull:`7544`)
+
+- Remote control: Fix empty password not working (:iss:`7538`)
+
+- Wayland: Fix regression in 0.34.0 causing flickering on window resize on NVIDIA drivers (:iss:`7493`)
 
 0.35.1 [2024-05-31]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -343,6 +343,10 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 %{_metainfodir}/*.xml
 
 %files kitten
+%if %{without bundled}
+# Go bundled provides generator
+%license vendor/modules.txt
+%endif
 %license LICENSE
 %{_bindir}/kitten
 

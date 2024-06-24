@@ -1,14 +1,14 @@
 import termios
 from ctypes import Array, c_ubyte
-from typing import Any, Callable, Dict, Iterator, List, NewType, Optional, Tuple, TypedDict, Union, overload
+from typing import Any, Callable, Dict, Iterator, List, Literal, NewType, Optional, Tuple, TypedDict, Union, overload
 
 from kitty.boss import Boss
-from kitty.fonts import FontFeature
+from kitty.fonts import VariableData
 from kitty.fonts.render import FontObject
 from kitty.marks import MarkerFunc
 from kitty.options.types import Options
 from kitty.types import LayerShellConfig, SignalInfo
-from kitty.typing import EdgeLiteral
+from kitty.typing import EdgeLiteral, NotRequired
 
 # Constants {{{
 GLFW_LAYER_SHELL_NONE: int
@@ -288,6 +288,8 @@ FC_MONO: int = 100
 FC_DUAL: int
 FC_WEIGHT_REGULAR: int
 FC_WEIGHT_BOLD: int
+FC_WEIGHT_SEMIBOLD: int
+FC_WEIGHT_MEDIUM: int
 FC_WIDTH_NORMAL: int
 FC_SLANT_ROMAN: int
 FC_SLANT_ITALIC: int
@@ -373,6 +375,7 @@ def default_color_table() -> Tuple[int, ...]:
 
 
 class FontConfigPattern(TypedDict):
+    descriptor_type: Literal['fontconfig']
     path: str
     index: int
     family: str
@@ -391,12 +394,16 @@ class FontConfigPattern(TypedDict):
     scalable: bool
     outline: bool
     color: bool
+    variable: bool
+    named_instance: bool
+
+    # The following two are used by C code to get a face from the pattern
+    named_style: NotRequired[int]
+    axes: NotRequired[Tuple[float, ...]]
+    features: NotRequired[Tuple[ParsedFontFeature, ...]]
 
 
-def fc_list(
-    spacing: int = -1,
-    allow_bitmapped_fonts: bool = False
-) -> Tuple[FontConfigPattern, ...]:
+def fc_list(spacing: int = -1, allow_bitmapped_fonts: bool = False, only_variable: bool = False) -> Tuple[FontConfigPattern, ...]:
     pass
 
 
@@ -418,9 +425,31 @@ def fc_match_postscript_name(
     pass
 
 
+class FeatureData(TypedDict):
+    name: NotRequired[str]
+    tooltip: NotRequired[str]
+    sample: NotRequired[str]
+    params: NotRequired[Tuple[str, ...]]
+
+
+class Face:
+    path: Optional[str]
+    def __init__(self, descriptor: Optional[FontConfigPattern] = None, path: str = '', index: int = 0): ...
+    def get_variable_data(self) -> VariableData: ...
+    def identify_for_debug(self) -> str: ...
+    def postscript_name(self) -> str: ...
+    def set_size(self, sz_in_pts: float, dpi_x: float, dpi_y: float) -> None: ...
+    def render_sample_text(self, text: str, width: int, height: int, fg_color: int = 0xffffff) -> Tuple[bytes, int, int]: ...
+    def get_variation(self) -> Optional[Dict[str, float]]: ...
+    def get_features(self) -> Dict[str, Optional[FeatureData]]: ...
+    def applied_features(self) -> Dict[str, str]: ...
+
+
 class CoreTextFont(TypedDict):
+    descriptor_type: Literal['core_text']
     path: str
     postscript_name: str
+    display_name: str
     family: str
     style: str
     bold: bool
@@ -429,13 +458,36 @@ class CoreTextFont(TypedDict):
     condensed: bool
     color_glyphs: bool
     monospace: bool
+    variation: Optional[Dict[str, float]]
     weight: float
     width: float
+    slant: float
     traits: int
 
+    # The following is used by C code to get a face from the pattern
+    axis_map: NotRequired[Dict[str, float]]
+    features: NotRequired[Tuple[ParsedFontFeature, ...]]
 
-def coretext_all_fonts() -> Tuple[CoreTextFont, ...]:
+
+class CTFace:
+    path: Optional[str]
+    def __init__(self, descriptor: Optional[CoreTextFont] = None, path: str = ''): ...
+    def get_variable_data(self) -> VariableData: ...
+    def identify_for_debug(self) -> str: ...
+    def postscript_name(self) -> str: ...
+    def set_size(self, sz_in_pts: float, dpi_x: float, dpi_y: float) -> None: ...
+    def render_sample_text(self, text: str, width: int, height: int, fg_color: int = 0xffffff) -> Tuple[bytes, int, int]: ...
+    def get_variation(self) -> Optional[Dict[str, float]]: ...
+    def get_features(self) -> Dict[str, Optional[FeatureData]]: ...
+    def applied_features(self) -> Dict[str, str]: ...
+
+
+def coretext_all_fonts(monospaced_only: bool) -> Tuple[CoreTextFont, ...]:
     pass
+
+
+class ParsedFontFeature:
+    def __init__(self, s: str): ...
 
 
 def add_timer(
@@ -553,10 +605,6 @@ def set_options(
 
 
 def get_options() -> Options:
-    pass
-
-
-def parse_font_feature(ff: str) -> bytes:
     pass
 
 
@@ -703,6 +751,7 @@ class Color:
 
 class ColorProfile:
 
+    default_fg: int
     default_bg: int
 
     def as_dict(self) -> Dict[str, Optional[int]]:
@@ -888,8 +937,21 @@ def concat_cells(cell_width: int, cell_height: int, is_32_bit: bool, cells: Tupl
     pass
 
 
-def current_fonts() -> Dict[str, Any]:
-    pass
+FontFace = Union[Face, CTFace]
+
+class CurrentFonts(TypedDict):
+    medium: FontFace
+    bold: FontFace
+    italic: FontFace
+    bi: FontFace
+    symbol: Tuple[FontFace, ...]
+    fallback: Tuple[FontFace, ...]
+    font_sz_in_pts: float
+    logical_dpi_x: float
+    logical_dpi_y: float
+
+
+def current_fonts(os_window_id: int = 0) -> CurrentFonts: ...
 
 
 def remove_window(os_window_id: int, tab_id: int, window_id: int) -> None:
@@ -1013,7 +1075,6 @@ def set_font_data(
     descriptor_for_idx: Callable[[int], Tuple[FontObject, bool, bool]],
     bold: int, italic: int, bold_italic: int, num_symbol_fonts: int,
     symbol_maps: Tuple[Tuple[int, int, int], ...], font_sz_in_pts: float,
-    font_feature_settings: Dict[str, Tuple[FontFeature, ...]],
     narrow_symbols: Tuple[Tuple[int, int, int], ...],
 ) -> None:
     pass

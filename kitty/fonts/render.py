@@ -5,13 +5,14 @@ import ctypes
 import sys
 from functools import partial
 from math import ceil, cos, floor, pi
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Optional, Tuple, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Literal, Optional, Tuple, Union, cast
 
 from kitty.constants import is_macos
 from kitty.fast_data_types import (
     NUM_UNDERLINE_STYLES,
     Screen,
     create_test_font_group,
+    current_fonts,
     get_fallback_font,
     get_options,
     set_font_data,
@@ -23,27 +24,20 @@ from kitty.fast_data_types import (
 )
 from kitty.fonts.box_drawing import BufType, distribute_dots, render_box_char, render_missing_glyph
 from kitty.options.types import Options, defaults
+from kitty.options.utils import parse_font_spec
 from kitty.types import _T
 from kitty.typing import CoreTextFont, FontConfigPattern
 from kitty.utils import log_error
 
+from .common import get_font_files
+
 if is_macos:
-    from .core_text import find_font_features
     from .core_text import font_for_family as font_for_family_macos
-    from .core_text import get_font_files as get_font_files_coretext
 else:
-    from .fontconfig import find_font_features
     from .fontconfig import font_for_family as font_for_family_fontconfig
-    from .fontconfig import get_font_files as get_font_files_fontconfig
 
 FontObject = Union[CoreTextFont, FontConfigPattern]
 current_faces: List[Tuple[FontObject, bool, bool]] = []
-
-
-def get_font_files(opts: Options) -> Dict[str, Any]:
-    if is_macos:
-        return get_font_files_coretext(opts)
-    return get_font_files_fontconfig(opts)
 
 
 def font_for_family(family: str) -> Tuple[FontObject, bool, bool]:
@@ -164,33 +158,25 @@ def descriptor_for_idx(idx: int) -> Tuple[FontObject, bool, bool]:
     return current_faces[idx]
 
 
-def dump_faces(ftypes: List[str], indices: Dict[str, int]) -> None:
-    def face_str(f: Tuple[FontObject, bool, bool]) -> str:
-        fo = f[0]
-        if 'index' in fo:
-            return '{}:{}'.format(fo['path'], cast('FontConfigPattern', fo)['index'])
-        fo = cast('CoreTextFont', fo)
-        return fo['path']
-
-    log_error('Preloaded font faces:')
-    log_error('normal face:', face_str(current_faces[0]))
-    for ftype in ftypes:
-        if indices[ftype]:
-            log_error(ftype, 'face:', face_str(current_faces[indices[ftype]]))
-    si_faces = current_faces[max(indices.values())+1:]
-    if si_faces:
-        log_error('Symbol map faces:')
-        for face in si_faces:
-            log_error(face_str(face))
+def dump_font_debug() -> None:
+    cf = current_fonts()
+    log_error('Text fonts:')
+    for key, text in {'medium': 'Normal', 'bold': 'Bold', 'italic': 'Italic', 'bi': 'Bold-Italic'}.items():
+        log_error(f'  {text}:', cf[key].identify_for_debug())  # type: ignore
+    ss = cf['symbol']
+    if ss:
+        log_error('Symbol map fonts:')
+        for s in ss:
+            log_error('  ' + s.identify_for_debug())
 
 
-def set_font_family(opts: Optional[Options] = None, override_font_size: Optional[float] = None, debug_font_matching: bool = False) -> None:
+def set_font_family(opts: Optional[Options] = None, override_font_size: Optional[float] = None) -> None:
     global current_faces
     opts = opts or defaults
     sz = override_font_size or opts.font_size
     font_map = get_font_files(opts)
     current_faces = [(font_map['medium'], False, False)]
-    ftypes = 'bold italic bi'.split()
+    ftypes: List[Literal['bold', 'italic', 'bi']] = ['bold', 'italic', 'bi']
     indices = {k: 0 for k in ftypes}
     for k in ftypes:
         if k in font_map:
@@ -200,16 +186,10 @@ def set_font_family(opts: Optional[Options] = None, override_font_size: Optional
     sm = create_symbol_map(opts)
     ns = create_narrow_symbols(opts)
     num_symbol_fonts = len(current_faces) - before
-    font_features = {}
-    for face, _, _ in current_faces:
-        font_features[face['postscript_name']] = find_font_features(face['postscript_name'])
-    font_features.update(opts.font_features)
-    if debug_font_matching:
-        dump_faces(ftypes, indices)
     set_font_data(
         render_box_drawing, prerender_function, descriptor_for_idx,
         indices['bold'], indices['italic'], indices['bi'], num_symbol_fonts,
-        sm, sz, font_features, ns
+        sm, sz, ns
     )
 
 
@@ -431,7 +411,7 @@ class setup_for_testing:
         self.family, self.size, self.dpi = family, size, dpi
 
     def __enter__(self) -> Tuple[Dict[Tuple[int, int, int], bytes], int, int]:
-        opts = defaults._replace(font_family=self.family, font_size=self.size)
+        opts = defaults._replace(font_family=parse_font_spec(self.family), font_size=self.size)
         set_options(opts)
         sprites = {}
 
@@ -481,29 +461,30 @@ def shape_string(
         return test_shape(line, path)
 
 
-def show(outfile: str, width: int, height: int, fmt: int) -> None:
-    import os
+def show(rgba_data: bytes, width: int, height: int, fmt: int = 32) -> None:
     from base64 import standard_b64encode
 
     from kittens.tui.images import GraphicsCommand
+
+    data = memoryview(standard_b64encode(rgba_data))
     cmd = GraphicsCommand()
     cmd.a = 'T'
     cmd.f = fmt
     cmd.s = width
     cmd.v = height
-    cmd.t = 't'
+
+    while data:
+        chunk, data = data[:4096], data[4096:]
+        cmd.m = 1 if data else 0
+        sys.stdout.buffer.write(cmd.serialize(chunk))
+        cmd.clear()
     sys.stdout.flush()
-    sys.stdout.buffer.write(cmd.serialize(standard_b64encode(os.path.abspath(outfile).encode())))
     sys.stdout.buffer.flush()
 
 
 def display_bitmap(rgb_data: bytes, width: int, height: int) -> None:
-    from tempfile import NamedTemporaryFile
-    setattr(display_bitmap, 'detected', True)
-    with NamedTemporaryFile(suffix='.rgba', delete=False) as f:
-        f.write(rgb_data)
     assert len(rgb_data) == 4 * width * height
-    show(f.name, width, height, 32)
+    show(rgb_data, width, height)
 
 
 def test_render_string(
@@ -517,8 +498,8 @@ def test_render_string(
     cell_width, cell_height, cells = render_string(text, family, size, dpi)
     rgb_data = concat_cells(cell_width, cell_height, True, tuple(cells))
     cf = current_fonts()
-    fonts = [cf['medium'].display_name()]
-    fonts.extend(f.display_name() for f in cf['fallback'])
+    fonts = [cf['medium'].postscript_name()]
+    fonts.extend(f.postscript_name() for f in cf['fallback'])
     msg = 'Rendered string {} below, with fonts: {}\n'.format(text, ', '.join(fonts))
     try:
         print(msg)

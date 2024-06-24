@@ -570,10 +570,12 @@ def load_ref_map() -> Dict[str, Dict[str, str]]:
 
 def generate_constants() -> str:
     from kittens.hints.main import DEFAULT_REGEX
+    from kittens.query_terminal.main import all_queries
     from kitty.config import option_names_for_completion
     from kitty.fast_data_types import FILE_TRANSFER_CODE
-    from kitty.options.utils import allowed_shell_integration_values
+    from kitty.options.utils import allowed_shell_integration_values, url_style_map
     del sys.modules['kittens.hints.main']
+    del sys.modules['kittens.query_terminal.main']
     ref_map = load_ref_map()
     with open('kitty/data-types.h') as dt:
         m = re.search(r'^#define IMAGE_PLACEHOLDER_CHAR (\S+)', dt.read(), flags=re.M)
@@ -582,6 +584,8 @@ def generate_constants() -> str:
     dp = ", ".join(map(lambda x: f'"{serialize_as_go_string(x)}"', kc.default_pager_for_help))
     url_prefixes = ','.join(f'"{x}"' for x in Options.url_prefixes)
     option_names = '`' + '\n'.join(option_names_for_completion()) + '`'
+    url_style = {v:k for k, v in url_style_map.items()}[Options.url_style]
+    query_names = ', '.join(f'"{name}"' for name in all_queries)
     return f'''\
 package kitty
 
@@ -600,6 +604,8 @@ var IsStandaloneBuild string = ""
 const HandleTermiosSignals = {Mode.HANDLE_TERMIOS_SIGNALS.value[0]}
 const HintsDefaultRegex = `{DEFAULT_REGEX}`
 const DefaultTermName = `{Options.term}`
+const DefaultUrlStyle = `{url_style}`
+const DefaultUrlColor = `{Options.url_color.as_sharp}`
 var Version VersionType = VersionType{{Major: {kc.version.major}, Minor: {kc.version.minor}, Patch: {kc.version.patch},}}
 var DefaultPager []string = []string{{ {dp} }}
 var FunctionalKeyNameAliases = map[string]string{serialize_go_dict(functional_key_name_aliases)}
@@ -608,6 +614,7 @@ var ConfigModMap = map[string]uint16{serialize_go_dict(config_mod_map)}
 var RefMap = map[string]string{serialize_go_dict(ref_map['ref'])}
 var DocTitleMap = map[string]string{serialize_go_dict(ref_map['doc'])}
 var AllowedShellIntegrationValues = []string{{ {str(sorted(allowed_shell_integration_values))[1:-1].replace("'", '"')} }}
+var QueryNames = []string{{ {query_names} }}
 var KittyConfigDefaults = struct {{
 Term, Shell_integration, Select_by_word_characters, Url_excluded_characters, Shell string
 Wheel_scroll_multiplier int

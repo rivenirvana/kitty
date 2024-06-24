@@ -32,29 +32,21 @@ kitty has very powerful font management. You can configure individual font faces
 and even specify special fonts for particular characters.
 ''')
 
-opt('font_family', 'monospace',
+opt('font_family', 'monospace', option_type='parse_font_spec',
     long_text='''
 You can specify different fonts for the bold/italic/bold-italic variants.
-To get a full list of supported fonts use the ``kitty +list-fonts`` command.
-By default they are derived automatically, by the OSes font system. When
-:opt:`bold_font` or :opt:`bold_italic_font` is set to :code:`auto` on macOS, the
-priority of bold fonts is semi-bold, bold, heavy. Setting them manually is
-useful for font families that have many weight variants like Book, Medium,
-Thick, etc.
-For example::
-
-    font_family      Operator Mono Book
-    bold_font        Operator Mono Medium
-    italic_font      Operator Mono Book Italic
-    bold_italic_font Operator Mono Medium Italic
+The easiest way to select fonts is to run the ``kitten choose-fonts`` command
+which will present a nice UI for you to select the fonts you want with previews
+and support for selecting variable fonts and font features. If you want to learn
+to select fonts manually, read the :ref:`font specification syntax <font_spec_syntax>`.
 '''
     )
 
-opt('bold_font', 'auto')
+opt('bold_font', 'auto', option_type='parse_font_spec')
 
-opt('italic_font', 'auto')
+opt('italic_font', 'auto', option_type='parse_font_spec')
 
-opt('bold_italic_font', 'auto')
+opt('bold_italic_font', 'auto', option_type='parse_font_spec')
 
 opt('font_size', '11.0',
     option_type='to_font_size', ctype='double',
@@ -132,12 +124,13 @@ Note that this refers to programming ligatures, typically implemented using the
 '''
     )
 
-opt('+font_features', 'none',
-    option_type='font_features',
-    add_to_default=False,
-    long_text='''
-Choose exactly which OpenType features to enable or disable. This is useful as
-some fonts might have features worthwhile in a terminal. For example, Fira Code
+opt('+font_features', 'none', option_type='font_features', ctype='!font_features',
+    add_to_default=False, long_text='''
+Choose exactly which OpenType features to enable or disable. Note that for the
+main fonts, features can be specified when selecting the font using the choose-fonts kitten.
+This setting is useful for fallback fonts.
+
+Some fonts might have features worthwhile in a terminal. For example, Fira Code
 includes a discretionary feature, :code:`zero`, which in that font changes the
 appearance of the zero (0), to make it more easily distinguishable from Ø. Fira
 Code also includes other discretionary features known as Stylistic Sets which
@@ -154,19 +147,8 @@ feature in the italic font but not in the regular font.
 On Linux, font features are first read from the FontConfig database and then
 this option is applied, so they can be configured in a single, central place.
 
-To get the PostScript name for a font, use ``kitty +list-fonts --psnames``:
-
-.. code-block:: sh
-
-    $ kitty +list-fonts --psnames | grep Fira
-    Fira Code
-    Fira Code Bold (FiraCode-Bold)
-    Fira Code Light (FiraCode-Light)
-    Fira Code Medium (FiraCode-Medium)
-    Fira Code Regular (FiraCode-Regular)
-    Fira Code Retina (FiraCode-Retina)
-
-The part in brackets is the PostScript name.
+To get the PostScript name for a font, use the ``fc-scan file.ttf`` command on Linux
+or the `Font Book tool on macOS <https://apple.stackexchange.com/questions/79875/how-can-i-get-the-postscript-name-of-a-ttf-font-installed-in-os-x>`__.
 
 Enable alternate zero and oldstyle numerals::
 
@@ -4279,7 +4261,7 @@ This will send "Special text" when you press the :kbd:`Ctrl+Alt+A` key
 combination. The text to be sent decodes :link:`ANSI C escapes <https://www.gnu.org/software/bash/manual/html_node/ANSI_002dC-Quoting.html>`
 so you can use escapes like :code:`\\\\e` to send control codes or :code:`\\\\u21fb` to send
 Unicode characters (or you can just input the Unicode characters directly as
-UTF-8 text). You can use ``kitten show_key`` to get the key escape
+UTF-8 text). You can use ``kitten show-key`` to get the key escape
 codes you want to emulate.
 
 The first argument to :code:`send_text` is the keyboard modes in which to

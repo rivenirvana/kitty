@@ -7,6 +7,7 @@
  */
 
 #include "fonts.h"
+#include "pyport.h"
 #include "state.h"
 #include "emoji.h"
 #include "unicode-data.h"
@@ -43,7 +44,6 @@ static hb_feature_t hb_features[3] = {{0}};
 static char_type shape_buffer[4096] = {0};
 static size_t max_texture_size = 1024, max_array_len = 1024;
 typedef enum { LIGA_FEATURE, DLIG_FEATURE, CALT_FEATURE } HBFeature;
-static PyObject* font_feature_settings = NULL;
 
 typedef struct {
     char_type left, right;
@@ -283,47 +283,89 @@ sprite_tracker_set_layout(GPUSpriteTracker *sprite_tracker, unsigned int cell_wi
 
 static PyObject*
 desc_to_face(PyObject *desc, FONTS_DATA_HANDLE fg) {
-    PyObject *d = specialize_font_descriptor(desc, fg);
+    PyObject *d = specialize_font_descriptor(desc, fg->font_sz_in_pts, fg->logical_dpi_x, fg->logical_dpi_y);
     if (d == NULL) return NULL;
     PyObject *ans = face_from_descriptor(d, fg);
     Py_DECREF(d);
     return ans;
 }
 
+static void
+add_feature(FontFeatures *output, const hb_feature_t *feature) {
+    for (size_t i = 0; i < output->count; i++) {
+        if (output->features[i].tag == feature->tag) {
+            output->features[i] = *feature;
+            return;
+        }
+    }
+    output->features[output->count++] = *feature;
+}
+
+static const char*
+tag_to_string(uint32_t tag, uint8_t bytes[5]) {
+    bytes[0] = (tag >> 24) & 0xff;
+    bytes[1] = (tag >> 16) & 0xff;
+    bytes[2] = (tag >> 8) & 0xff;
+    bytes[3] = (tag) & 0xff;
+    bytes[4] = 0;
+    return (const char*)bytes;
+}
+
+PyObject*
+font_features_as_dict(const FontFeatures *font_features) {
+    RAII_PyObject(ans, PyDict_New());
+    if (!ans) return NULL;
+    char buf[256];
+    char tag[5] = {0};
+    for (size_t i = 0; i < font_features->count; i++) {
+        tag_to_string(font_features->features[i].tag, (unsigned char*)tag);
+        hb_feature_to_string(&font_features->features[i], buf, arraysz(buf));
+        PyObject *t = PyUnicode_FromString(buf);
+        if (!t) return NULL;
+        if (PyDict_SetItemString(ans, tag, t) != 0) return NULL;
+    }
+    Py_INCREF(ans); return ans;
+}
+
+bool
+create_features_for_face(const char *psname, PyObject *features, FontFeatures *output) {
+    size_t count_from_descriptor = features ? PyTuple_GET_SIZE(features): 0;
+    __typeof__(OPT(font_features).entries) from_opts = NULL;
+    if (psname) {
+        for (size_t i = 0; i < OPT(font_features).num && !from_opts; i++) {
+            __typeof__(OPT(font_features).entries) e = OPT(font_features).entries + i;
+            if (strcmp(e->psname, psname) == 0) from_opts = e;
+        }
+    }
+    size_t count_from_opts = from_opts ? from_opts->num : 0;
+    output->features = calloc(MAX(2u, count_from_opts + count_from_descriptor), sizeof(output->features[0]));
+    if (!output->features) { PyErr_NoMemory(); return false; }
+    for (size_t i = 0; i < count_from_opts; i++) {
+        add_feature(output, &from_opts->features[i]);
+    }
+    for (size_t i = 0; i < count_from_descriptor; i++) {
+        ParsedFontFeature *f = (ParsedFontFeature*)PyTuple_GET_ITEM(features, i);
+        add_feature(output, &f->feature);
+    }
+    if (!output->count) {
+        if (strstr(psname, "NimbusMonoPS-") == psname) {
+            add_feature(output, &hb_features[LIGA_FEATURE]);
+            add_feature(output, &hb_features[DLIG_FEATURE]);
+        }
+    }
+    return true;
+}
+
 static bool
 init_font(Font *f, PyObject *face, bool bold, bool italic, bool emoji_presentation) {
     f->face = face; Py_INCREF(f->face);
     f->bold = bold; f->italic = italic; f->emoji_presentation = emoji_presentation;
-    f->num_ffs_hb_features = 0;
-    const char *psname = postscript_name_for_face(face);
-    if (font_feature_settings != NULL){
-        PyObject* o = PyDict_GetItemString(font_feature_settings, psname);
-        if (o != NULL && PyTuple_Check(o)) {
-            Py_ssize_t len = PyTuple_GET_SIZE(o);
-            if (len > 0) {
-                f->num_ffs_hb_features = len + 1;
-                f->ffs_hb_features = calloc(f->num_ffs_hb_features, sizeof(hb_feature_t));
-                if (!f->ffs_hb_features) return false;
-                for (Py_ssize_t i = 0; i < len; i++) {
-                    PyObject* parsed = PyObject_GetAttrString(PyTuple_GET_ITEM(o, i), "parsed");
-                    if (parsed) {
-                        memcpy(f->ffs_hb_features + i, PyBytes_AS_STRING(parsed), sizeof(hb_feature_t));
-                        Py_DECREF(parsed);
-                    }
-                }
-                memcpy(f->ffs_hb_features + len, &hb_features[CALT_FEATURE], sizeof(hb_feature_t));
-            }
-        }
-    }
-    if (!f->num_ffs_hb_features) {
-        f->ffs_hb_features = calloc(4, sizeof(hb_feature_t));
-        if (!f->ffs_hb_features) return false;
-        if (strstr(psname, "NimbusMonoPS-") == psname) {
-            memcpy(f->ffs_hb_features + f->num_ffs_hb_features++, &hb_features[LIGA_FEATURE], sizeof(hb_feature_t));
-            memcpy(f->ffs_hb_features + f->num_ffs_hb_features++, &hb_features[DLIG_FEATURE], sizeof(hb_feature_t));
-        }
-        memcpy(f->ffs_hb_features + f->num_ffs_hb_features++, &hb_features[CALT_FEATURE], sizeof(hb_feature_t));
-    }
+    const FontFeatures *features = features_for_face(face);
+    f->ffs_hb_features = calloc(1 + features->count, sizeof(hb_feature_t));
+    if (!f->ffs_hb_features) { PyErr_NoMemory(); return false; }
+    f->num_ffs_hb_features = features->count;
+    memcpy(f->ffs_hb_features, features->features, sizeof(hb_feature_t) * features->count);
+    memcpy(f->ffs_hb_features + f->num_ffs_hb_features++, &hb_features[CALT_FEATURE], sizeof(hb_feature_t));
     return true;
 }
 
@@ -631,14 +673,15 @@ END_ALLOW_CASE_RANGE
 static PyObject* box_drawing_function = NULL, *prerender_function = NULL, *descriptor_for_idx = NULL;
 
 void
-render_alpha_mask(const uint8_t *alpha_mask, pixel* dest, Region *src_rect, Region *dest_rect, size_t src_stride, size_t dest_stride) {
+render_alpha_mask(const uint8_t *alpha_mask, pixel* dest, Region *src_rect, Region *dest_rect, size_t src_stride, size_t dest_stride, pixel color_rgb) {
+    pixel col = color_rgb << 8;
     for (size_t sr = src_rect->top, dr = dest_rect->top; sr < src_rect->bottom && dr < dest_rect->bottom; sr++, dr++) {
         pixel *d = dest + dest_stride * dr;
         const uint8_t *s = alpha_mask + src_stride * sr;
         for(size_t sc = src_rect->left, dc = dest_rect->left; sc < src_rect->right && dc < dest_rect->right; sc++, dc++) {
             uint8_t src_alpha = d[dc] & 0xff;
             uint8_t alpha = s[sc];
-            d[dc] = 0xffffff00 | MAX(alpha, src_alpha);
+            d[dc] = col | MAX(alpha, src_alpha);
         }
     }
 }
@@ -662,7 +705,7 @@ render_box_cell(FontGroup *fg, CPUCell *cpu_cell, GPUCell *gpu_cell) {
     uint8_t *alpha_mask = PyLong_AsVoidPtr(PyTuple_GET_ITEM(ret, 0));
     ensure_canvas_can_fit(fg, 1);
     Region r = { .right = fg->cell_width, .bottom = fg->cell_height };
-    render_alpha_mask(alpha_mask, fg->canvas.buf, &r, &r, fg->cell_width, fg->cell_width);
+    render_alpha_mask(alpha_mask, fg->canvas.buf, &r, &r, fg->cell_width, fg->cell_width, 0xffffff);
     current_send_sprite_to_gpu((FONTS_DATA_HANDLE)fg, sp->x, sp->y, sp->z, fg->canvas.buf);
     Py_DECREF(ret);
 }
@@ -1432,12 +1475,12 @@ set_symbol_maps(SymbolMap **maps, size_t *num, const PyObject *sm) {
 static PyObject*
 set_font_data(PyObject UNUSED *m, PyObject *args) {
     PyObject *sm, *ns;
-    Py_CLEAR(box_drawing_function); Py_CLEAR(prerender_function); Py_CLEAR(descriptor_for_idx); Py_CLEAR(font_feature_settings);
-    if (!PyArg_ParseTuple(args, "OOOIIIIO!dOO!",
+    Py_CLEAR(box_drawing_function); Py_CLEAR(prerender_function); Py_CLEAR(descriptor_for_idx);
+    if (!PyArg_ParseTuple(args, "OOOIIIIO!dO!",
                 &box_drawing_function, &prerender_function, &descriptor_for_idx,
                 &descriptor_indices.bold, &descriptor_indices.italic, &descriptor_indices.bi, &descriptor_indices.num_symbol_fonts,
-                &PyTuple_Type, &sm, &OPT(font_size), &font_feature_settings, &PyTuple_Type, &ns)) return NULL;
-    Py_INCREF(box_drawing_function); Py_INCREF(prerender_function); Py_INCREF(descriptor_for_idx); Py_INCREF(font_feature_settings);
+                &PyTuple_Type, &sm, &OPT(font_size), &PyTuple_Type, &ns)) return NULL;
+    Py_INCREF(box_drawing_function); Py_INCREF(prerender_function); Py_INCREF(descriptor_for_idx);
     free_font_groups();
     clear_symbol_maps();
     set_symbol_maps(&symbol_maps, &num_symbol_maps, sm);
@@ -1465,7 +1508,7 @@ send_prerendered_sprites(FontGroup *fg) {
         uint8_t *alpha_mask = PyLong_AsVoidPtr(PyTuple_GET_ITEM(cell_addresses, i));
         ensure_canvas_can_fit(fg, 1);  // clear canvas
         Region r = { .right = fg->cell_width, .bottom = fg->cell_height };
-        render_alpha_mask(alpha_mask, fg->canvas.buf, &r, &r, fg->cell_width, fg->cell_width);
+        render_alpha_mask(alpha_mask, fg->canvas.buf, &r, &r, fg->cell_width, fg->cell_width, 0xffffff);
         current_send_sprite_to_gpu((FONTS_DATA_HANDLE)fg, x, y, z, fg->canvas.buf);
     }
     Py_CLEAR(args);
@@ -1538,7 +1581,6 @@ finalize(void) {
     Py_CLEAR(box_drawing_function);
     Py_CLEAR(prerender_function);
     Py_CLEAR(descriptor_for_idx);
-    Py_CLEAR(font_feature_settings);
     free_font_groups();
     free(ligature_types);
     if (harfbuzz_buffer) { hb_buffer_destroy(harfbuzz_buffer); harfbuzz_buffer = NULL; }
@@ -1633,27 +1675,43 @@ concat_cells(PyObject UNUSED *self, PyObject *args) {
 }
 
 static PyObject*
-current_fonts(PYNOARG) {
+current_fonts(PyObject *self UNUSED, PyObject *args) {
+    unsigned long long os_window_id = 0;
+    if (!PyArg_ParseTuple(args, "|K", &os_window_id)) return NULL;
     if (!num_font_groups) { PyErr_SetString(PyExc_RuntimeError, "must create font group first"); return NULL; }
-    PyObject *ans = PyDict_New();
-    if (!ans) return NULL;
     FontGroup *fg = font_groups;
-#define SET(key, val) {if (PyDict_SetItemString(ans, #key, fg->fonts[val].face) != 0) { goto error; }}
+    if (os_window_id) {
+        OSWindow *os_window = os_window_for_id(os_window_id);
+        if (!os_window) { PyErr_SetString(PyExc_KeyError, "no oswindow with the specified id exists"); return NULL; }
+        fg = (FontGroup*)os_window->fonts_data;
+    }
+    RAII_PyObject(ans, PyDict_New());
+    if (!ans) return NULL;
+#define SET(key, val) {if (PyDict_SetItemString(ans, #key, fg->fonts[val].face) != 0) { return NULL; }}
     SET(medium, fg->medium_font_idx);
     if (fg->bold_font_idx > 0) SET(bold, fg->bold_font_idx);
     if (fg->italic_font_idx > 0) SET(italic, fg->italic_font_idx);
     if (fg->bi_font_idx > 0) SET(bi, fg->bi_font_idx);
-    PyObject *ff = PyTuple_New(fg->fallback_fonts_count);
-    if (!ff) goto error;
+    unsigned num_symbol_fonts = fg->first_fallback_font_idx - fg->first_symbol_font_idx;
+    RAII_PyObject(ss, PyTuple_New(num_symbol_fonts));
+    if (!ss) return NULL;
+    for (size_t i = 0; i < num_symbol_fonts; i++) {
+        Py_INCREF(fg->fonts[fg->first_symbol_font_idx + i].face);
+        PyTuple_SET_ITEM(ss, i, fg->fonts[fg->first_symbol_font_idx + i].face);
+    }
+    if (PyDict_SetItemString(ans, "symbol", ss) != 0) return NULL;
+    RAII_PyObject(ff, PyTuple_New(fg->fallback_fonts_count));
+    if (!ff) return NULL;
     for (size_t i = 0; i < fg->fallback_fonts_count; i++) {
         Py_INCREF(fg->fonts[fg->first_fallback_font_idx + i].face);
         PyTuple_SET_ITEM(ff, i, fg->fonts[fg->first_fallback_font_idx + i].face);
     }
-    PyDict_SetItemString(ans, "fallback", ff);
-    Py_CLEAR(ff);
+    if (PyDict_SetItemString(ans, "fallback", ff) != 0) return NULL;
+#define p(x) { RAII_PyObject(t, PyFloat_FromDouble(fg->x)); if (!t) return NULL; if (PyDict_SetItemString(ans, #x, t) != 0) return NULL; }
+    p(font_sz_in_pts); p(logical_dpi_x); p(logical_dpi_y);
+#undef p
+    Py_INCREF(ans);
     return ans;
-error:
-    Py_CLEAR(ans); return NULL;
 #undef SET
 }
 
@@ -1693,35 +1751,104 @@ free_font_data(PyObject *self UNUSED, PyObject *args UNUSED) {
     Py_RETURN_NONE;
 }
 
+static PyObject *
+parsed_font_feature_new(PyTypeObject *type, PyObject *args, PyObject *kwds UNUSED) {
+    const char *s;
+    if (!PyArg_ParseTuple(args, "s", &s)) return NULL;
+    ParsedFontFeature *self = (ParsedFontFeature *)type->tp_alloc(type, 0);
+    if (self != NULL) {
+        if (!hb_feature_from_string(s, -1, &self->feature)) {
+            PyErr_Format(PyExc_ValueError, "%s is not a valid font feature", s);
+            Py_CLEAR(self);
+        }
+    }
+    return (PyObject*) self;
+}
+
 static PyObject*
-parse_font_feature(PyObject *self UNUSED, PyObject *feature) {
-    if (!PyUnicode_Check(feature)) {
-        PyErr_SetString(PyExc_TypeError, "feature must be a unicode object");
-        return NULL;
+parsed_font_feature_str(PyObject *self_) {
+    char buf[128];
+    hb_feature_to_string(&((ParsedFontFeature*)self_)->feature, buf, arraysz(buf));
+    return PyUnicode_FromString(buf);
+}
+
+static PyObject*
+parsed_font_feature_repr(PyObject *self_) {
+    RAII_PyObject(s, parsed_font_feature_str(self_));
+    return s ? PyObject_Repr(s) : NULL;
+}
+
+
+PyTypeObject ParsedFontFeature_Type;
+
+static PyObject*
+parsed_font_feature_cmp(PyObject *self, PyObject *other, int op) {
+    if (op != Py_EQ && op != Py_NE) return Py_NotImplemented;
+    if (!PyObject_TypeCheck(other, &ParsedFontFeature_Type)) {
+        if (op == Py_EQ) Py_RETURN_FALSE;
+        Py_RETURN_TRUE;
     }
-    PyObject *ans = PyBytes_FromStringAndSize(NULL, sizeof(hb_feature_t));
-    if (!ans) return NULL;
-    if (!hb_feature_from_string(PyUnicode_AsUTF8(feature), -1, (hb_feature_t*)PyBytes_AS_STRING(ans))) {
-        Py_CLEAR(ans);
-        PyErr_Format(PyExc_ValueError, "%U is not a valid font feature", feature);
-        return NULL;
+    ParsedFontFeature *a = (ParsedFontFeature*)self, *b = (ParsedFontFeature*)other;
+    PyObject *ret = Py_True;
+    if (memcmp(&a->feature, &b->feature, sizeof(hb_feature_t)) == 0) {
+        if (op == Py_NE) ret = Py_False;
+    } else {
+        if (op == Py_EQ) ret = Py_False;
     }
-    return ans;
+    Py_INCREF(ret); return ret;
+}
+
+static Py_hash_t
+parsed_font_feature_hash(PyObject *s) {
+    ParsedFontFeature *self = (ParsedFontFeature*)s;
+    if (self->hash_computed) return self->hashval;
+    self->hash_computed = true;
+    HASH_FUNCTION(&self->feature, sizeof(hb_feature_t), self->hashval);
+    return self->hashval;
+}
+
+static PyObject*
+parsed_font_feature_call(PyObject *s, PyObject *args, PyObject *kwargs UNUSED) {
+    ParsedFontFeature *self = (ParsedFontFeature*)s;
+    void *dest = PyLong_AsVoidPtr(args);
+    memcpy(dest, &self->feature, sizeof(hb_feature_t));
+    Py_RETURN_NONE;
+}
+
+PyTypeObject ParsedFontFeature_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "kitty.fast_data_types.ParsedFontFeature",
+    .tp_basicsize = sizeof(ParsedFontFeature),
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "FontFeature",
+    .tp_new = parsed_font_feature_new,
+    .tp_str = parsed_font_feature_str,
+    .tp_repr = parsed_font_feature_repr,
+    .tp_richcompare = parsed_font_feature_cmp,
+    .tp_hash = parsed_font_feature_hash,
+    .tp_call = parsed_font_feature_call,
+};
+
+static PyObject*
+pyspecialize_font_descriptor(PyObject *self UNUSED, PyObject *args) {
+    PyObject *desc; double font_sz, dpi_x, dpi_y;
+    if (!PyArg_ParseTuple(args, "Offf", &desc, &font_sz, &dpi_x, &dpi_y)) return NULL;
+    return specialize_font_descriptor(desc, font_sz, dpi_x, dpi_y);
 }
 
 static PyMethodDef module_methods[] = {
     METHODB(set_font_data, METH_VARARGS),
     METHODB(free_font_data, METH_NOARGS),
-    METHODB(parse_font_feature, METH_O),
     METHODB(create_test_font_group, METH_VARARGS),
     METHODB(sprite_map_set_layout, METH_VARARGS),
     METHODB(test_sprite_position_for, METH_VARARGS),
     METHODB(concat_cells, METH_VARARGS),
     METHODB(set_send_sprite_to_gpu, METH_O),
     METHODB(test_shape, METH_VARARGS),
-    METHODB(current_fonts, METH_NOARGS),
+    METHODB(current_fonts, METH_VARARGS),
     METHODB(test_render_line, METH_VARARGS),
     METHODB(get_fallback_font, METH_VARARGS),
+    {"specialize_font_descriptor", (PyCFunction)pyspecialize_font_descriptor, METH_VARARGS, ""},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
@@ -1740,5 +1867,9 @@ init_fonts(PyObject *module) {
     create_feature("-calt", CALT_FEATURE);
 #undef create_feature
     if (PyModule_AddFunctions(module, module_methods) != 0) return false;
+    if (PyType_Ready(&ParsedFontFeature_Type) < 0) return 0;
+    if (PyModule_AddObject(module, "ParsedFontFeature", (PyObject *)&ParsedFontFeature_Type) != 0) return 0;
+    Py_INCREF(&ParsedFontFeature_Type);
+
     return true;
 }

@@ -147,45 +147,51 @@ pyspacing(int val) {
 #undef S
 }
 
+static PyObject*
+increment_and_return(PyObject *x) { if (x) Py_INCREF(x); return x; }
 
 static PyObject*
 pattern_as_dict(FcPattern *pat) {
-    PyObject *ans = PyDict_New(), *p = NULL, *list = NULL;
+    RAII_PyObject(ans, Py_BuildValue("{ss}", "descriptor_type", "fontconfig"));
     if (ans == NULL) return NULL;
 
 #define PS(x) PyUnicode_Decode((const char*)x, strlen((const char*)x), "UTF-8", "replace")
 
-#define G(type, get, which, conv, name) { \
+#define G(type, get, which, conv, name, default) { \
     type out; \
     if (get(pat, which, 0, &out) == FcResultMatch) { \
-        p = conv(out); if (p == NULL) goto exit; \
-        if (PyDict_SetItemString(ans, #name, p) != 0) goto exit; \
-        Py_CLEAR(p); \
-    }}
+        RAII_PyObject(p, conv(out)); \
+        if (!p || PyDict_SetItemString(ans, #name, p) != 0) return NULL; \
+    } else { RAII_PyObject(d, default); if (!d || PyDict_SetItemString(ans, #name, d) != 0) return NULL; } \
+}
 
 #define L(type, get, which, conv, name) { \
     type out; int n = 0; \
-    list = PyList_New(0); \
-    if (!list) goto exit; \
+    RAII_PyObject(list, PyList_New(0)); \
+    if (!list) return NULL; \
     while (get(pat, which, n++, &out) == FcResultMatch) { \
-        p = conv(out); if (p == NULL) goto exit; \
-        if (PyList_Append(list, p) != 0) goto exit; \
-        Py_CLEAR(p); \
+        RAII_PyObject(p, conv(out));  \
+        if (!p || PyList_Append(list, p) != 0) return NULL; \
     } \
-    if (PyDict_SetItemString(ans, #name, list) != 0) goto exit; \
-    Py_CLEAR(list); \
+    if (PyDict_SetItemString(ans, #name, list) != 0) return NULL; \
 }
-#define S(which, key) G(FcChar8*, FcPatternGetString, which, PS, key)
+#define S(which, key) G(FcChar8*, FcPatternGetString, which, PS, key, PyUnicode_FromString(""))
 #define LS(which, key) L(FcChar8*, FcPatternGetString, which, PS, key)
-#define I(which, key) G(int, FcPatternGetInteger, which, PyLong_FromLong, key)
-#define B(which, key) G(int, FcPatternGetBool, which, pybool, key)
-#define E(which, key, conv) G(int, FcPatternGetInteger, which, conv, key)
+#define I(which, key) G(int, FcPatternGetInteger, which, PyLong_FromLong, key, PyLong_FromUnsignedLong(0))
+#define B(which, key) G(FcBool, FcPatternGetBool, which, pybool, key, increment_and_return(Py_False))
+#define E(which, key, conv) G(int, FcPatternGetInteger, which, conv, key, PyLong_FromUnsignedLong(0))
     S(FC_FILE, path);
     S(FC_FAMILY, family);
     S(FC_STYLE, style);
     S(FC_FULLNAME, full_name);
     S(FC_POSTSCRIPT_NAME, postscript_name);
     LS(FC_FONT_FEATURES, fontfeatures);
+    B(FC_VARIABLE, variable);
+#ifdef FC_NAMED_INSTANCE
+    B(FC_NAMED_INSTANCE, named_instance);
+#else
+    PyDict_SetItemString(ans, "named_instance", Py_False);
+#endif
     I(FC_WEIGHT, weight);
     I(FC_WIDTH, width)
     I(FC_SLANT, slant);
@@ -198,11 +204,8 @@ pattern_as_dict(FcPattern *pat) {
     B(FC_OUTLINE, outline);
     B(FC_COLOR, color);
     E(FC_SPACING, spacing, pyspacing);
-exit:
-    if (PyErr_Occurred()) Py_CLEAR(ans);
-    Py_CLEAR(p);
-    Py_CLEAR(list);
 
+    Py_INCREF(ans);
     return ans;
 #undef PS
 #undef S
@@ -229,22 +232,28 @@ font_set(FcFontSet *fs) {
 #define AP(func, which, in, desc) if (!func(pat, which, in)) { PyErr_Format(PyExc_ValueError, "Failed to add %s to fontconfig pattern", desc, NULL); goto end; }
 
 static PyObject*
-fc_list(PyObject UNUSED *self, PyObject *args) {
+fc_list(PyObject UNUSED *self, PyObject *args, PyObject *kw) {
     ensure_initialized();
-    int allow_bitmapped_fonts = 0, spacing = -1;
+    int allow_bitmapped_fonts = 0, spacing = -1, only_variable = 0;
     PyObject *ans = NULL;
     FcObjectSet *os = NULL;
     FcPattern *pat = NULL;
     FcFontSet *fs = NULL;
-    if (!PyArg_ParseTuple(args, "|ip", &spacing, &allow_bitmapped_fonts)) return NULL;
+    static char *kwds[] = {"spacing", "allow_bitmapped_fonts", "only_variable", NULL};
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "|ipp", kwds, &spacing, &allow_bitmapped_fonts, &only_variable)) return NULL;
     pat = FcPatternCreate();
     if (pat == NULL) return PyErr_NoMemory();
     if (!allow_bitmapped_fonts) {
-        AP(FcPatternAddBool, FC_OUTLINE, true, "outline");
-        AP(FcPatternAddBool, FC_SCALABLE, true, "scalable");
+        AP(FcPatternAddBool, FC_OUTLINE, FcTrue, "outline");
+        AP(FcPatternAddBool, FC_SCALABLE, FcTrue, "scalable");
     }
     if (spacing > -1) AP(FcPatternAddInteger, FC_SPACING, spacing, "spacing");
-    os = FcObjectSetBuild(FC_FILE, FC_POSTSCRIPT_NAME, FC_FAMILY, FC_STYLE, FC_FULLNAME, FC_WEIGHT, FC_WIDTH, FC_SLANT, FC_HINT_STYLE, FC_INDEX, FC_HINTING, FC_SCALABLE, FC_OUTLINE, FC_COLOR, FC_SPACING, NULL);
+    if (only_variable) AP(FcPatternAddBool, FC_VARIABLE, FcTrue, "variable");
+    os = FcObjectSetBuild(FC_FILE, FC_POSTSCRIPT_NAME, FC_FAMILY, FC_STYLE, FC_FULLNAME, FC_WEIGHT, FC_WIDTH, FC_SLANT, FC_HINT_STYLE, FC_INDEX, FC_HINTING, FC_SCALABLE, FC_OUTLINE, FC_COLOR, FC_SPACING, FC_VARIABLE,
+#ifdef FC_NAMED_INSTANCE
+    FC_NAMED_INSTANCE,
+#endif
+    NULL);
     if (!os) { PyErr_SetString(PyExc_ValueError, "Failed to create fontconfig object set"); goto end; }
     fs = FcFontList(NULL, pat, os);
     if (!fs) { PyErr_SetString(PyExc_ValueError, "Failed to create fontconfig font set"); goto end; }
@@ -393,27 +402,46 @@ end:
 }
 
 PyObject*
-specialize_font_descriptor(PyObject *base_descriptor, FONTS_DATA_HANDLE fg) {
+specialize_font_descriptor(PyObject *base_descriptor, double font_sz_in_pts, double dpi_x, double dpi_y) {
     ensure_initialized();
-    PyObject *p = PyDict_GetItemString(base_descriptor, "path"), *ans = NULL;
+    PyObject *p = PyDict_GetItemString(base_descriptor, "path");
     PyObject *idx = PyDict_GetItemString(base_descriptor, "index");
     if (p == NULL) { PyErr_SetString(PyExc_ValueError, "Base descriptor has no path"); return NULL; }
     if (idx == NULL) { PyErr_SetString(PyExc_ValueError, "Base descriptor has no index"); return NULL; }
+    unsigned long face_idx = PyLong_AsUnsignedLong(idx);
+    if (PyErr_Occurred()) return NULL;
+
     FcPattern *pat = FcPatternCreate();
     if (pat == NULL) return PyErr_NoMemory();
-    long face_idx = MAX(0, PyLong_AsLong(idx));
+    RAII_PyObject(ans, NULL);
     AP(FcPatternAddString, FC_FILE, (const FcChar8*)PyUnicode_AsUTF8(p), "path");
     AP(FcPatternAddInteger, FC_INDEX, face_idx, "index");
-    AP(FcPatternAddDouble, FC_SIZE, fg->font_sz_in_pts, "size");
-    AP(FcPatternAddDouble, FC_DPI, (fg->logical_dpi_x + fg->logical_dpi_y) / 2.0, "dpi");
+    AP(FcPatternAddDouble, FC_SIZE, font_sz_in_pts, "size");
+    AP(FcPatternAddDouble, FC_DPI, (dpi_x + dpi_y) / 2.0, "dpi");
     ans = _fc_match(pat);
+    FcPatternDestroy(pat); pat = NULL;
+
     if (face_idx > 0) {
         // For some reason FcFontMatch sets the index to zero, so manually restore it.
-        PyDict_SetItemString(ans, "index", idx);
+        if (PyDict_SetItemString(ans, "index", idx) != 0) return NULL;
     }
-end:
-    if (pat != NULL) FcPatternDestroy(pat);
+    PyObject *named_style = PyDict_GetItemString(base_descriptor, "named_style");
+    if (named_style) {
+        if (PyDict_SetItemString(ans, "named_style", named_style) != 0) return NULL;
+    }
+    PyObject *axes = PyDict_GetItemString(base_descriptor, "axes");
+    if (axes) {
+        if (PyDict_SetItemString(ans, "axes", axes) != 0) return NULL;
+    }
+    PyObject *features = PyDict_GetItemString(base_descriptor, "features");
+    if (features) {
+        if (PyDict_SetItemString(ans, "features", features) != 0) return NULL;
+    }
+    Py_INCREF(ans);
     return ans;
+end:
+    if (pat) FcPatternDestroy(pat);
+    return NULL;
 }
 
 bool
@@ -464,7 +492,7 @@ end:
 
 #undef AP
 static PyMethodDef module_methods[] = {
-    METHODB(fc_list, METH_VARARGS),
+    {"fc_list", (PyCFunction)(void (*) (void))(fc_list), METH_VARARGS | METH_KEYWORDS, NULL},
     METHODB(fc_match, METH_VARARGS),
     METHODB(fc_match_postscript_name, METH_VARARGS),
     {NULL, NULL, 0, NULL}        /* Sentinel */

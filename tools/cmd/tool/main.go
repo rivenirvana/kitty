@@ -6,11 +6,13 @@ import (
 	"fmt"
 
 	"kitty/kittens/ask"
+	"kitty/kittens/choose_fonts"
 	"kitty/kittens/clipboard"
 	"kitty/kittens/diff"
 	"kitty/kittens/hints"
 	"kitty/kittens/hyperlinked_grep"
 	"kitty/kittens/icat"
+	"kitty/kittens/query_terminal"
 	"kitty/kittens/show_key"
 	"kitty/kittens/ssh"
 	"kitty/kittens/themes"
@@ -76,6 +78,10 @@ func KittyToolEntryPoints(root *cli.Command) {
 	run_shell.EntryPoint(root)
 	// show_error
 	show_error.EntryPoint(root)
+	// choose-fonts
+	choose_fonts.EntryPoint(root)
+	// query-terminal
+	query_terminal.EntryPoint(root)
 	// __pytest__
 	pytest.EntryPoint(root)
 	// __hold_till_enter__

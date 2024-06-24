@@ -20,6 +20,7 @@
 #include <wchar.h>
 #include <Python.h>
 #include <fcntl.h>
+#include "launcher.h"
 
 #ifndef KITTY_LIB_PATH
 #define KITTY_LIB_PATH "../.."
@@ -367,27 +368,54 @@ is_boolean_flag(const char *x) {
 static void
 handle_fast_commandline(int argc, char *argv[]) {
     char current_option_expecting_argument[128] = {0};
-    bool version_requested = false;
-    for (int i = 1; i < argc; i++) {
+    CLIOptions opts = {0};
+    int first_arg = 1;
+    if (argc > 1 && strcmp(argv[1], "+open") == 0) {
+        first_arg = 2;
+    } else if (argc > 2 && strcmp(argv[1], "+") == 0 && strcmp(argv[2], "open") == 0) {
+        first_arg = 3;
+    }
+    for (int i = first_arg; i < argc; i++) {
         const char *arg = argv[i];
         if (current_option_expecting_argument[0]) {
+handle_option_value:
+            if (strcmp(current_option_expecting_argument, "session") == 0) {
+                opts.session = arg;
+            } else if (strcmp(current_option_expecting_argument, "instance-group") == 0) {
+                opts.instance_group = arg;
+            }
             current_option_expecting_argument[0] = 0;
         } else {
-            if (!arg || !arg[0] || !arg[1] || arg[0] != '-' || strcmp(arg, "--") == 0) break;
+            if (!arg || !arg[0] || !arg[1] || arg[0] != '-' || strcmp(arg, "--") == 0) {
+                if (first_arg > 1) {
+                    opts.open_urls = argv + i;
+                    opts.open_url_count = argc - i;
+                }
+                break;
+            }
             if (arg[1] == '-') {  // long opt
                 const char *equal = strchr(arg, '=');
                 if (equal == NULL) {
                     if (strcmp(arg+2, "version") == 0) {
-                        version_requested = true;
+                        opts.version_requested = true;
+                    } else if (strcmp(arg+2, "single-instance") == 0) {
+                        opts.single_instance = true;
+                    } else if (strcmp(arg+2, "wait-for-single-instance-window-close") == 0) {
+                        opts.wait_for_single_instance_window_close = true;
                     } else if (!is_boolean_flag(arg+2)) {
                         strncpy(current_option_expecting_argument, arg+2, sizeof(current_option_expecting_argument)-1);
                     }
+                } else {
+                    memcpy(current_option_expecting_argument, arg+2, equal - (arg + 2));
+                    arg = equal + 1;
+                    goto handle_option_value;
                 }
             } else {
                 char buf[2] = {0};
                 for (int i = 1; arg[i] != 0; i++) {
                     switch(arg[i]) {
-                        case 'v': version_requested = true; break;
+                        case 'v': opts.version_requested = true; break;
+                        case '1': opts.single_instance = true; break;
                         default:
                             buf[0] = arg[i]; buf[1] = 0;
                             if (!is_boolean_flag(buf)) { current_option_expecting_argument[0] = arg[i]; current_option_expecting_argument[1] = 0; }
@@ -397,7 +425,7 @@ handle_fast_commandline(int argc, char *argv[]) {
         }
     }
 
-    if (version_requested) {
+    if (opts.version_requested) {
         if (isatty(STDOUT_FILENO)) {
             printf("\x1b[3mkitty\x1b[23m \x1b[32m%s\x1b[39m created by \x1b[1;34mKovid Goyal\x1b[22;39m\n", KITTY_VERSION);
         } else {
@@ -405,6 +433,7 @@ handle_fast_commandline(int argc, char *argv[]) {
         }
         exit(0);
     }
+    if (opts.single_instance) single_instance_main(argc, argv, &opts);
 }
 
 int main(int argc, char *argv[], char* envp[]) {

@@ -1286,7 +1286,7 @@ def build_launcher(args: Options, launcher_dir: str = '.', bundle_type: str = 's
     objects = []
     cppflags.append('-DKITTY_CLI_BOOL_OPTIONS=" ' + ' '.join(kitty_cli_boolean_options()) + ' "')
     cppflags.append('-DKITTY_VERSION="' + '.'.join(map(str, version)) + '"')
-    for src in ('kitty/launcher/main.c',):
+    for src in ('kitty/launcher/main.c', 'kitty/launcher/single-instance.c'):
         obj = os.path.join(build_dir, src.replace('/', '-').replace('.c', '.o'))
         objects.append(obj)
         cmd = env.cc + cppflags + cflags + ['-c', src, '-o', obj]
@@ -2022,7 +2022,7 @@ def build_dep() -> None:
     p.add_argument(
         '--platform',
         default=Options.platform,
-        choices='all macos linux linux-32 linux-arm64 linux-64'.split(),
+        choices='all macos linux linux-arm64 linux-64'.split(),
         help='Platforms to build the dep for'
     )
     p.add_argument(
@@ -2034,7 +2034,6 @@ def build_dep() -> None:
     args = p.parse_args(sys.argv[2:], namespace=Options())
     linux_platforms = [
         ['linux', '--arch=64'],
-        ['linux', '--arch=32'],
         ['linux', '--arch=arm64'],
     ]
     if args.platform == 'all':

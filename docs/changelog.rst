@@ -74,6 +74,12 @@ Detailed list of changes
 
 - Wayland: Allow fractional scales less than one (:pull:`7549`)
 
+- Wayland: Fix specifying the output name for the panel kitten not working (:iss:`7573`)
+
+- icat kitten: Add an option :option:`kitty +kitten icat --no-trailing-newline` to leave the cursor to the right of the image (:iss:`7574`)
+
+- Speed up ``kitty --version`` and ``kitty --single-instance`` (for all subsequent instances). They are now the fastest of all terminal emulators with similar functionality.
+
 
 0.35.2 [2024-06-22]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

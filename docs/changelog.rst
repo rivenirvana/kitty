@@ -68,7 +68,7 @@ Detailed list of changes
 0.36.0 [future]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- Support `OpenType Variable fonts <https://en.wikipedia.org/wiki/Variable_font>`__
+- Support `OpenType Variable fonts <https://en.wikipedia.org/wiki/Variable_font>`__ (:iss:`3711`)
 
 - A new ``choose-fonts`` kitten that provides a UI with font previews to ease selection of fonts. Also has support for font features and variable fonts.
 
@@ -79,6 +79,8 @@ Detailed list of changes
 - icat kitten: Add an option :option:`kitty +kitten icat --no-trailing-newline` to leave the cursor to the right of the image (:iss:`7574`)
 
 - Speed up ``kitty --version`` and ``kitty --single-instance`` (for all subsequent instances). They are now the fastest of all terminal emulators with similar functionality.
+
+- macOS: Fix rendering of the unicode hyphen (U+2010) character when using a font that does not include a glyph for it (:iss:`7525`)
 
 
 0.35.2 [2024-06-22]

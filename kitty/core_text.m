@@ -300,7 +300,7 @@ is_last_resort_font(CTFontRef new_font) {
     return ans;
 }
 
-static CTFontDescriptorRef _nerd_font_descriptor = NULL;
+static CTFontDescriptorRef _nerd_font_descriptor = NULL, builtin_nerd_font_descriptor = NULL;
 
 static CTFontRef nerd_font(CGFloat sz) {
     static bool searched = false;
@@ -320,20 +320,13 @@ static CTFontRef nerd_font(CGFloat sz) {
         }
         CFRelease(fonts);
     }
-    return _nerd_font_descriptor ? CTFontCreateWithFontDescriptor(_nerd_font_descriptor, sz, NULL) : NULL;
+    if (_nerd_font_descriptor) return CTFontCreateWithFontDescriptor(_nerd_font_descriptor, sz, NULL);
+    if (builtin_nerd_font_descriptor) return CTFontCreateWithFontDescriptor(builtin_nerd_font_descriptor, sz, NULL);
+    return NULL;
 }
 
-static bool
-font_can_render_cell(CTFontRef font, CPUCell *cell) {
-    char_type ch = cell->ch ? cell->ch : ' ';
-    bool found = true;
-    if (!glyph_id_for_codepoint_ctfont(font, ch)) found = false;
-    for (unsigned i = 0; i < arraysz(cell->cc_idx) && cell->cc_idx[i] && found; i++) {
-        char_type cch = codepoint_for_mark(cell->cc_idx[i]);
-        if (!glyph_id_for_codepoint_ctfont(font, cch)) found = false;
-    }
-    return found;
-}
+static bool ctfont_has_codepoint(const void *ctfont, char_type cp) { return glyph_id_for_codepoint_ctfont(ctfont, cp) > 0; }
+static bool font_can_render_cell(CTFontRef font, CPUCell *cell) { return has_cell_text(ctfont_has_codepoint, font, cell, false); }
 
 static CTFontRef
 manually_search_fallback_fonts(CTFontRef current_font, CPUCell *cell) {
@@ -362,6 +355,13 @@ manually_search_fallback_fonts(CTFontRef current_font, CPUCell *cell) {
         CFRelease(new_font);
     }
     CFRelease(fonts);
+    if (!ans) {
+        CTFontRef nf = nerd_font(CTFontGetSize(current_font));
+        if (nf) {
+            if (font_can_render_cell(nf, cell)) ans = nf;
+            else CFRelease(nf);
+        }
+    }
     return ans;
 }
 
@@ -383,12 +383,10 @@ find_substitute_face(CFStringRef str, CTFontRef old_font, CPUCell *cpu_cell) {
                 new_font = manually_search_fallback_fonts(old_font, cpu_cell);
                 if (new_font) return new_font;
             }
-            PyErr_Format(PyExc_ValueError, "Failed to find fallback CTFont other than the %s font for: %s", LAST_RESORT_FONT_NAME, [(NSString *)str UTF8String]);
             return NULL;
         }
         return new_font;
     }
-    PyErr_SetString(PyExc_ValueError, "CoreText returned the same font as a fallback font");
     return NULL;
 }
 
@@ -419,6 +417,8 @@ apply_styles_to_fallback_font(CTFontRef original_fallback_font, bool bold, bool 
     return original_fallback_font;
 }
 
+static bool face_has_codepoint(const void *face, char_type ch) { return glyph_id_for_codepoint(face, ch) > 0; }
+
 PyObject*
 create_fallback_face(PyObject *base_face, CPUCell* cell, bool bold, bool italic, bool emoji_presentation, FONTS_DATA_HANDLE fg) {
     CTFace *self = (CTFace*)base_face;
@@ -439,7 +439,7 @@ create_fallback_face(PyObject *base_face, CPUCell* cell, bool bold, bool italic,
         }
     }
     else { search_for_fallback(); new_font = apply_styles_to_fallback_font(new_font, bold, italic); }
-    if (new_font == NULL) return NULL;
+    if (new_font == NULL) Py_RETURN_NONE;
     RAII_PyObject(postscript_name, convert_cfstring(CTFontCopyPostScriptName(new_font), true));
     if (!postscript_name) return NULL;
     ssize_t idx = -1;
@@ -451,12 +451,19 @@ create_fallback_face(PyObject *base_face, CPUCell* cell, bool bold, bool italic,
             break;
         }
     }
-    return ans ? ans : (PyObject*)ct_face(new_font, NULL);
+    if (!ans) {
+        ans = (PyObject*)ct_face(new_font, NULL);
+        if (ans && !has_cell_text(face_has_codepoint, ans, cell, global_state.debug_font_fallback)) {
+            Py_CLEAR(ans);
+            Py_RETURN_NONE;
+        }
+    }
+    return ans;
 }
 
 unsigned int
-glyph_id_for_codepoint(PyObject *s, char_type ch) {
-    CTFace *self = (CTFace*)s;
+glyph_id_for_codepoint(const PyObject *s, char_type ch) {
+    const CTFace *self = (CTFace*)s;
     return glyph_id_for_codepoint_ctfont(self->ct_font, ch);
 }
 
@@ -633,7 +640,18 @@ cell_metrics(PyObject *s, unsigned int* cell_width, unsigned int* cell_height, u
 
 PyObject*
 face_from_descriptor(PyObject *descriptor, FONTS_DATA_HANDLE fg) {
-    RAII_CoreFoundation(CTFontDescriptorRef, desc, font_descriptor_from_python(descriptor));
+    RAII_CoreFoundation(CTFontDescriptorRef, desc, NULL);
+    if (builtin_nerd_font_descriptor) {
+        PyObject *psname = PyDict_GetItemString(descriptor, "postscript_name");
+        if (psname && PyUnicode_CompareWithASCIIString(psname, "SymbolsNFM") == 0) {
+            RAII_PyObject(path, get_path_for_font_descriptor(builtin_nerd_font_descriptor));
+            PyObject *dpath = PyDict_GetItemString(descriptor, "path");
+            if (dpath && PyUnicode_Compare(path, dpath) == 0) {
+                desc = builtin_nerd_font_descriptor; CFRetain(desc);
+            }
+        }
+    }
+    if (!desc) desc = font_descriptor_from_python(descriptor);
     if (!desc) return NULL;
     RAII_CoreFoundation(CTFontRef, font, CTFontCreateWithFontDescriptor(desc, fg ? scaled_point_sz(fg) : 12, NULL));
     if (!font) { PyErr_SetString(PyExc_ValueError, "Failed to create CTFont object"); return NULL; }
@@ -665,8 +683,7 @@ new(PyTypeObject *type UNUSED, PyObject *args, PyObject *kw) {
 
 PyObject*
 specialize_font_descriptor(PyObject *base_descriptor, double font_sz_in_pts UNUSED, double dpi_x UNUSED, double dpi_y UNUSED) {
-    Py_INCREF(base_descriptor);
-    return base_descriptor;
+    return PyDict_Copy(base_descriptor);
 }
 
 struct RenderBuffers {
@@ -686,6 +703,8 @@ finalize(void) {
     if (window_title_font) CFRelease(window_title_font);
     window_title_font = nil;
     if (_nerd_font_descriptor) CFRelease(_nerd_font_descriptor);
+    if (builtin_nerd_font_descriptor) CFRelease(builtin_nerd_font_descriptor);
+    _nerd_font_descriptor = NULL; builtin_nerd_font_descriptor = NULL;
 }
 
 
@@ -1104,18 +1123,35 @@ repr(CTFace *self) {
 
 
 static PyObject*
-coretext_add_font_file(PyObject UNUSED *_self, PyObject *args) {
+add_font_file(PyObject UNUSED *_self, PyObject *args) {
     const unsigned char *path = NULL; Py_ssize_t sz;
     if (!PyArg_ParseTuple(args, "s#", &path, &sz)) return NULL;
     RAII_CoreFoundation(CFURLRef, url, CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, path, sz, false));
+    if (CTFontManagerRegisterFontsForURL(url, kCTFontManagerScopeProcess, NULL)) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+static PyObject*
+set_builtin_nerd_font(PyObject UNUSED *self, PyObject *pypath) {
+    if (!PyUnicode_Check(pypath)) { PyErr_SetString(PyExc_TypeError, "path must be a string"); return NULL; }
+    const char *path = NULL; Py_ssize_t sz;
+    path = PyUnicode_AsUTF8AndSize(pypath, &sz);
+    RAII_CoreFoundation(CFURLRef, url, CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const unsigned char*)path, sz, false));
     RAII_CoreFoundation(CFArrayRef, descriptors, CTFontManagerCreateFontDescriptorsFromURL(url));
-    CTFontManagerEnableFontDescriptors(descriptors, true);
-    Py_RETURN_TRUE;
+    if (!descriptors || CFArrayGetCount(descriptors) == 0) {
+        PyErr_SetString(PyExc_OSError, "Failed to create descriptor from nerd font path");
+        return NULL;
+    }
+    if (builtin_nerd_font_descriptor) CFRelease(builtin_nerd_font_descriptor);
+    builtin_nerd_font_descriptor = CFArrayGetValueAtIndex(descriptors, 0);
+    CFRetain(builtin_nerd_font_descriptor);
+    return font_descriptor_to_python(builtin_nerd_font_descriptor);
 }
 
 static PyMethodDef module_methods[] = {
     METHODB(coretext_all_fonts, METH_O),
-    METHODB(coretext_add_font_file, METH_VARARGS),
+    METHODB(add_font_file, METH_VARARGS),
+    METHODB(set_builtin_nerd_font, METH_O),
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 

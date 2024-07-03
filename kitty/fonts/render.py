@@ -2,12 +2,13 @@
 # License: GPL v3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 import ctypes
+import os
 import sys
 from functools import partial
 from math import ceil, cos, floor, pi
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Literal, Optional, Tuple, Union, cast
 
-from kitty.constants import is_macos
+from kitty.constants import fonts_dir, is_macos
 from kitty.fast_data_types import (
     NUM_UNDERLINE_STYLES,
     Screen,
@@ -15,6 +16,7 @@ from kitty.fast_data_types import (
     current_fonts,
     get_fallback_font,
     get_options,
+    set_builtin_nerd_font,
     set_font_data,
     set_options,
     set_send_sprite_to_gpu,
@@ -29,19 +31,17 @@ from kitty.types import _T
 from kitty.typing import CoreTextFont, FontConfigPattern
 from kitty.utils import log_error
 
+from . import family_name_to_key
 from .common import get_font_files
 
 if is_macos:
-    from kitty.fast_data_types import coretext_add_font_file as add_font_file
-
     from .core_text import font_for_family as font_for_family_macos
 else:
-    from kitty.fast_data_types import fc_add_font_file as add_font_file
-
     from .fontconfig import font_for_family as font_for_family_fontconfig
 
 FontObject = Union[CoreTextFont, FontConfigPattern]
 current_faces: List[Tuple[FontObject, bool, bool]] = []
+builtin_nerd_font_descriptor: Optional[FontObject] = None
 
 
 def font_for_family(family: str) -> Tuple[FontObject, bool, bool]:
@@ -147,6 +147,10 @@ def create_symbol_map(opts: Options) -> Tuple[Tuple[int, int, int], ...]:
     for family in val.values():
         if family not in family_map:
             font, bold, italic = font_for_family(family)
+            fkey = family_name_to_key(family)
+            if fkey in ('symbolsnfm', 'symbols nerd font mono') and font['postscript_name'] != 'SymbolsNFM' and builtin_nerd_font_descriptor:
+                font = builtin_nerd_font_descriptor
+                bold = italic = False
             family_map[family] = count
             count += 1
             current_faces.append((font, bold, italic))
@@ -174,8 +178,8 @@ def dump_font_debug() -> None:
             log_error('  ' + s.identify_for_debug())
 
 
-def set_font_family(opts: Optional[Options] = None, override_font_size: Optional[float] = None) -> None:
-    global current_faces
+def set_font_family(opts: Optional[Options] = None, override_font_size: Optional[float] = None, add_builtin_nerd_font: bool = False) -> None:
+    global current_faces, builtin_nerd_font_descriptor
     opts = opts or defaults
     sz = override_font_size or opts.font_size
     font_map = get_font_files(opts)
@@ -187,6 +191,12 @@ def set_font_family(opts: Optional[Options] = None, override_font_size: Optional
             indices[k] = len(current_faces)
             current_faces.append((font_map[k], 'b' in k, 'i' in k))
     before = len(current_faces)
+    if add_builtin_nerd_font:
+        builtin_nerd_font_path = os.path.join(fonts_dir, 'SymbolsNerdFontMono-Regular.ttf')
+        if os.path.exists(builtin_nerd_font_path):
+            builtin_nerd_font_descriptor = set_builtin_nerd_font(builtin_nerd_font_path)
+        else:
+            log_error(f'No builtin NERD font found in {fonts_dir}')
     sm = create_symbol_map(opts)
     ns = create_narrow_symbols(opts)
     num_symbol_fonts = len(current_faces) - before
@@ -528,7 +538,6 @@ def test_fallback_font(qtext: Optional[str] = None, bold: bool = False, italic: 
 
 
 def showcase() -> None:
-    add_font_file
     f = 'monospace' if is_macos else 'Liberation Mono'
     test_render_string('He\u0347\u0305llo\u0337, w\u0302or\u0306l\u0354d!', family=f)
     test_render_string('你好,世界', family=f)

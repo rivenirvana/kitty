@@ -18,6 +18,7 @@
 
 static bool initialized = false;
 static void* libfontconfig_handle = NULL;
+static struct {PyObject *face, *descriptor;} builtin_nerd_font = {0};
 
 #define FcInit dynamically_loaded_fc_symbol.Init
 #define FcFini dynamically_loaded_fc_symbol.Fini
@@ -133,6 +134,8 @@ ensure_initialized(void) {
 static void
 finalize(void) {
     if (initialized) {
+        Py_CLEAR(builtin_nerd_font.face);
+        Py_CLEAR(builtin_nerd_font.descriptor);
         FcFini();
         dlclose(libfontconfig_handle);
         libfontconfig_handle = NULL;
@@ -423,6 +426,12 @@ specialize_font_descriptor(PyObject *base_descriptor, double font_sz_in_pts, dou
     AP(FcPatternAddDouble, FC_DPI, (dpi_x + dpi_y) / 2.0, "dpi");
     ans = _fc_match(pat);
     FcPatternDestroy(pat); pat = NULL;
+    if (!ans) return NULL;
+    // fontconfig returns a completely random font if the base descriptor
+    // points to a font that fontconfig hasnt indexed, for example the builting
+    // NERD font
+    PyObject *new_path = PyDict_GetItemString(ans, "path");
+    if (!new_path || PyObject_RichCompareBool(p, new_path, Py_EQ) != 1) { Py_CLEAR(ans); ans = PyDict_Copy(base_descriptor); if (!ans) return NULL;  }
 
     if (face_idx > 0) {
         // For some reason FcFontMatch sets the index to zero, so manually restore it.
@@ -466,37 +475,91 @@ end:
     return ok;
 }
 
+static bool face_has_codepoint(const void *face, char_type cp) { return glyph_id_for_codepoint(face, cp) > 0; }
+
 PyObject*
 create_fallback_face(PyObject UNUSED *base_face, CPUCell* cell, bool bold, bool italic, bool emoji_presentation, FONTS_DATA_HANDLE fg) {
     ensure_initialized();
     PyObject *ans = NULL;
+    RAII_PyObject(d, NULL);
     FcPattern *pat = FcPatternCreate();
     if (pat == NULL) return PyErr_NoMemory();
+    bool glyph_found = false;
     AP(FcPatternAddString, FC_FAMILY, (const FcChar8*)(emoji_presentation ? "emoji" : "monospace"), "family");
     if (!emoji_presentation && bold) { AP(FcPatternAddInteger, FC_WEIGHT, FC_WEIGHT_BOLD, "weight"); }
     if (!emoji_presentation && italic) { AP(FcPatternAddInteger, FC_SLANT, FC_SLANT_ITALIC, "slant"); }
     if (emoji_presentation) { AP(FcPatternAddBool, FC_COLOR, true, "color"); }
     size_t num = cell_as_unicode_for_fallback(cell, char_buf);
     add_charset(pat, num);
-    PyObject *d = _fc_match(pat);
+    d = _fc_match(pat);
+face_from_descriptor:
     if (d) {
         ssize_t idx = -1;
         PyObject *q;
         while ((q = iter_fallback_faces(fg, &idx))) {
-            if (face_equals_descriptor(q, d)) { ans = PyLong_FromSsize_t(idx); Py_CLEAR(d); goto end; }
+            if (face_equals_descriptor(q, d)) {
+                ans = PyLong_FromSsize_t(idx);
+                if (!glyph_found) glyph_found = has_cell_text(face_has_codepoint, q, cell, false);
+                goto end;
+            }
         }
         ans = face_from_descriptor(d, fg);
-        Py_CLEAR(d);
+        if (!glyph_found) glyph_found = has_cell_text(face_has_codepoint, ans, cell, false);
     }
 end:
-    if (pat != NULL) FcPatternDestroy(pat);
+    Py_CLEAR(d);
+    if (pat != NULL) { FcPatternDestroy(pat); pat = NULL; }
+    if (!glyph_found && !PyErr_Occurred()) {
+        if (builtin_nerd_font.face && has_cell_text(face_has_codepoint, builtin_nerd_font.face, cell, false)) {
+            Py_CLEAR(ans);
+            d = builtin_nerd_font.descriptor; Py_INCREF(d); glyph_found = true; goto face_from_descriptor;
+        } else {
+            if (global_state.debug_font_fallback && ans) has_cell_text(face_has_codepoint, ans, cell, true);
+            Py_CLEAR(ans); ans = Py_None; Py_INCREF(ans);
+        }
+    }
     return ans;
 }
 
-#undef AP
 
 static PyObject*
-fc_add_font_file(PyObject UNUSED *self, PyObject *args) {
+set_builtin_nerd_font(PyObject UNUSED *self, PyObject *pypath) {
+    if (!PyUnicode_Check(pypath)) { PyErr_SetString(PyExc_TypeError, "path must be a string"); return NULL; }
+    ensure_initialized();
+    const char *path = PyUnicode_AsUTF8(pypath);
+    FcPattern *pat = FcPatternCreate();
+    if (pat == NULL) return PyErr_NoMemory();
+    Py_CLEAR(builtin_nerd_font.face);
+    Py_CLEAR(builtin_nerd_font.descriptor);
+
+    builtin_nerd_font.face = face_from_path(path, 0, NULL);
+    if (builtin_nerd_font.face) {
+        // Copy whatever hinting settings fontconfig returns for the nerd font postscript name
+        AP(FcPatternAddString, FC_POSTSCRIPT_NAME, (const unsigned char*)postscript_name_for_face(builtin_nerd_font.face), "postscript_name");
+        RAII_PyObject(d, _fc_match(pat));
+        if (!d) goto end;
+        builtin_nerd_font.descriptor = PyDict_New();
+        if (!builtin_nerd_font.descriptor) goto end;
+#define copy(key) { PyObject *t = PyDict_GetItemString(d, #key); if (t) { if (PyDict_SetItemString(builtin_nerd_font.descriptor, #key, t) != 0)goto end; } }
+        copy(hinting); copy(hint_style);
+#undef copy
+        if (PyDict_SetItemString(builtin_nerd_font.descriptor, "path", pypath) != 0) goto end;
+        if (PyDict_SetItemString(builtin_nerd_font.descriptor, "index", PyLong_FromLong(0)) != 0) goto end;
+    }
+end:
+    if (pat) FcPatternDestroy(pat);
+    if (PyErr_Occurred()) {
+        Py_CLEAR(builtin_nerd_font.face);
+        Py_CLEAR(builtin_nerd_font.descriptor);
+        return NULL;
+    }
+    Py_INCREF(builtin_nerd_font.descriptor);
+    return builtin_nerd_font.descriptor;
+}
+
+
+static PyObject*
+add_font_file(PyObject UNUSED *self, PyObject *args) {
     ensure_initialized();
     const char *path = NULL;
     if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
@@ -505,11 +568,14 @@ fc_add_font_file(PyObject UNUSED *self, PyObject *args) {
 }
 
 
+#undef AP
+
 static PyMethodDef module_methods[] = {
     {"fc_list", (PyCFunction)(void (*) (void))(fc_list), METH_VARARGS | METH_KEYWORDS, NULL},
     METHODB(fc_match, METH_VARARGS),
     METHODB(fc_match_postscript_name, METH_VARARGS),
-    METHODB(fc_add_font_file, METH_VARARGS),
+    METHODB(add_font_file, METH_VARARGS),
+    METHODB(set_builtin_nerd_font, METH_O),
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 

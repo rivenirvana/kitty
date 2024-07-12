@@ -142,7 +142,8 @@ new_screen_object(PyTypeObject *type, PyObject *args, PyObject UNUSED *kwds) {
         ) {
             Py_CLEAR(self); return NULL;
         }
-        self->main_grman->window_id = self->window_id; self->alt_grman->window_id = self->window_id;
+        grman_set_window_id(self->main_grman, self->window_id);
+        grman_set_window_id(self->alt_grman, self->window_id);
         self->alt_tabstops = self->main_tabstops + self->columns;
         self->tabstops = self->main_tabstops;
         init_tabstops(self->main_tabstops, self->columns);
@@ -606,30 +607,6 @@ set_active_hyperlink(Screen *self, char *id, char *url) {
     }
 }
 
-hyperlink_id_type
-remap_hyperlink_ids(Screen *self, hyperlink_id_type *map) {
-#define PROCESS_CELL(cell) { hid = (cell).hyperlink_id; if (hid) { if (!map[hid]) map[hid] = ++num; (cell).hyperlink_id = map[hid]; }}
-    hyperlink_id_type num = 0, hid;
-    if (self->historybuf->count) {
-        for (index_type y = self->historybuf->count; y-- > 0;) {
-            CPUCell *cells = historybuf_cpu_cells(self->historybuf, y);
-            for (index_type x = 0; x < self->historybuf->xnum; x++) {
-                PROCESS_CELL(cells[x]);
-            }
-        }
-    }
-    LineBuf *second = self->linebuf, *first = second == self->main_linebuf ? self->alt_linebuf : self->main_linebuf;
-    for (index_type i = 0; i < self->lines * self->columns; i++) {
-        PROCESS_CELL(first->cpu_cell_buf[i]);
-    }
-    for (index_type i = 0; i < self->lines * self->columns; i++) {
-        PROCESS_CELL(second->cpu_cell_buf[i]);
-    }
-    return num;
-#undef PROCESS_CELL
-}
-
-
 static bool is_flag_pair(char_type a, char_type b) {
     return is_flag_codepoint(a) && is_flag_codepoint(b);
 }
@@ -1089,7 +1066,7 @@ screen_toggle_screen_buffer(Screen *self, bool save_cursor, bool clear_alt_scree
     }
     screen_history_scroll(self, SCROLL_FULL, false);
     self->is_dirty = true;
-    self->grman->layers_dirty = true;
+    grman_mark_layers_dirty(self->grman);
     clear_selection(&self->selections);
     global_state.check_for_active_animated_images = true;
 }
@@ -3467,8 +3444,8 @@ has_selection(Screen *self, PyObject *a UNUSED) {
 }
 
 static PyObject*
-hyperlinks_as_list(Screen *self, PyObject *args UNUSED) {
-    return screen_hyperlinks_as_list(self);
+hyperlinks_as_set(Screen *self, PyObject *args UNUSED) {
+    return screen_hyperlinks_as_set(self);
 }
 
 static PyObject*
@@ -4802,7 +4779,7 @@ static PyMethodDef methods[] = {
     MND(erase_in_display, METH_VARARGS)
     MND(clear_scrollback, METH_NOARGS)
     MND(scroll_until_cursor_prompt, METH_VARARGS)
-    MND(hyperlinks_as_list, METH_NOARGS)
+    MND(hyperlinks_as_set, METH_NOARGS)
     MND(garbage_collect_hyperlink_pool, METH_NOARGS)
     MND(hyperlink_for_id, METH_O)
     MND(reverse_scroll, METH_VARARGS)

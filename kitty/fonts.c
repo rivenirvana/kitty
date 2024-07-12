@@ -28,11 +28,6 @@ typedef enum {
 } LigatureType;
 
 
-#define SPECIAL_FILLED_MASK 1
-#define SPECIAL_VALUE_MASK 2
-#define EMPTY_FILLED_MASK 4
-#define EMPTY_VALUE_MASK 8
-
 typedef struct {
     size_t max_y;
     unsigned int x, y, z, xnum, ynum;
@@ -58,10 +53,10 @@ typedef enum { SPACER_STRATEGY_UNKNOWN, SPACERS_BEFORE, SPACERS_AFTER, SPACERS_I
 typedef struct {
     PyObject *face;
     // Map glyphs to sprite map co-ords
-    SpritePosition *sprite_position_hash_table;
+    SPRITE_POSITION_MAP_HANDLE sprite_position_hash_table;
     hb_feature_t* ffs_hb_features;
     size_t num_ffs_hb_features;
-    GlyphProperties *glyph_properties_hash_table;
+    GLYPH_PROPERTIES_MAP_HANDLE glyph_properties_hash_table;
     bool bold, italic, emoji_presentation;
     SpacerStrategy spacer_strategy;
 } Font;
@@ -71,11 +66,12 @@ typedef struct Canvas {
     unsigned current_cells, alloced_cells;
 } Canvas;
 
-typedef struct fallback_font_map {
-    const char *cell_text;
-    size_t font_idx;
-    UT_hash_handle hh;
-} fallback_font_map_t;
+#define NAME fallback_font_map_t
+#define KEY_TY const char*
+#define VAL_TY size_t
+static void free_const(const void* x) { free((void*)x); }
+#define KEY_DTOR_FN free_const
+#include "kitty-verstable.h"
 
 typedef struct {
     FONTS_DATA_HEAD
@@ -86,7 +82,7 @@ typedef struct {
     Font *fonts;
     Canvas canvas;
     GPUSpriteTracker sprite_tracker;
-    fallback_font_map_t *fallback_font_map;
+    fallback_font_map_t fallback_font_map;
 } FontGroup;
 
 static FontGroup* font_groups = NULL;
@@ -142,9 +138,7 @@ font_group_is_unused(FontGroup *fg) {
 void
 free_maps(Font *font) {
     free_sprite_position_hash_table(&font->sprite_position_hash_table);
-    font->sprite_position_hash_table = NULL;
     free_glyph_properties_hash_table(&font->glyph_properties_hash_table);
-    font->glyph_properties_hash_table = NULL;
 }
 
 static void
@@ -159,17 +153,9 @@ static void
 del_font_group(FontGroup *fg) {
     free(fg->canvas.buf); fg->canvas.buf = NULL; fg->canvas = (Canvas){0};
     fg->sprite_map = free_sprite_map(fg->sprite_map);
-    if (fg->fallback_font_map) {
-        fallback_font_map_t *current, *tmp;
-        HASH_ITER(hh, fg->fallback_font_map, current, tmp) {
-            free((void*)current->cell_text);
-            HASH_DEL(fg->fallback_font_map, current);
-            free(current);
-        }
-        fg->fallback_font_map = NULL;
-    }
+    vt_cleanup(&fg->fallback_font_map);
     for (size_t i = 0; i < fg->fonts_count; i++) del_font(fg->fonts + i);
-    free(fg->fonts); fg->fonts = NULL;
+    free(fg->fonts); fg->fonts = NULL; fg->fonts_count = 0;
 }
 
 static void
@@ -256,7 +242,7 @@ do_increment(FontGroup *fg, int *error) {
 static SpritePosition*
 sprite_position_for(FontGroup *fg, Font *font, glyph_index *glyphs, unsigned glyph_count, uint8_t ligature_index, unsigned cell_count, int *error) {
     bool created;
-    SpritePosition *s = find_or_create_sprite_position(&font->sprite_position_hash_table, glyphs, glyph_count, ligature_index, cell_count, &created);
+    SpritePosition *s = find_or_create_sprite_position(font->sprite_position_hash_table, glyphs, glyph_count, ligature_index, cell_count, &created);
     if (!s) { *error = 1; return NULL; }
     if (created) {
         s->x = fg->sprite_tracker.x; s->y = fg->sprite_tracker.y; s->z = fg->sprite_tracker.z;
@@ -357,9 +343,19 @@ create_features_for_face(const char *psname, PyObject *features, FontFeatures *o
 }
 
 static bool
+init_hash_tables(Font *f) {
+    f->sprite_position_hash_table = create_sprite_position_hash_table();
+    if (!f->sprite_position_hash_table) { PyErr_NoMemory(); return false; }
+    f->glyph_properties_hash_table = create_glyph_properties_hash_table();
+    if (!f->glyph_properties_hash_table) { PyErr_NoMemory(); return false; }
+    return true;
+}
+
+static bool
 init_font(Font *f, PyObject *face, bool bold, bool italic, bool emoji_presentation) {
     f->face = face; Py_INCREF(f->face);
     f->bold = bold; f->italic = italic; f->emoji_presentation = emoji_presentation;
+    if (!init_hash_tables(f)) return false;
     const FontFeatures *features = features_for_face(face);
     f->ffs_hb_features = calloc(1 + features->count, sizeof(hb_feature_t));
     if (!f->ffs_hb_features) { PyErr_NoMemory(); return false; }
@@ -565,21 +561,11 @@ fallback_font(FontGroup *fg, CPUCell *cpu_cell, GPUCell *gpu_cell) {
     if (bold) style += italic ? 3 : 2; else style += italic ? 1 : 0;
     char cell_text[8 + arraysz(cpu_cell->cc_idx) * 4] = {style};
     const size_t cell_text_len = 1 + cell_as_utf8(cpu_cell, true, cell_text + 1, ' ');
-    if (fg->fallback_font_map) {
-        fallback_font_map_t *s;
-        HASH_FIND_STR(fg->fallback_font_map, cell_text, s);
-        /* printf("cache %s\n", (s ? "hit" : "miss")); */
-        if (s) return s->font_idx;
-    }
+    fallback_font_map_t_itr fi = vt_get(&fg->fallback_font_map, cell_text);
+    if (!vt_is_end(fi)) return fi.data->val;
     ssize_t idx = load_fallback_font(fg, cpu_cell, bold, italic, emoji_presentation);
-    fallback_font_map_t *ffm = calloc(1, sizeof(fallback_font_map_t));
-    if (ffm) {
-        ffm->font_idx = idx;
-        ffm->cell_text = strndup(cell_text, cell_text_len);
-        if (ffm->cell_text) {
-            HASH_ADD_KEYPTR(hh, fg->fallback_font_map, ffm->cell_text, cell_text_len, ffm);
-        }
-    }
+    const char *alloced_key = strndup(cell_text, cell_text_len);
+    if (alloced_key) vt_insert(&fg->fallback_font_map, alloced_key, idx);
     return idx;
 }
 
@@ -863,29 +849,28 @@ static bool
 is_special_glyph(glyph_index glyph_id, Font *font, CellData* cell_data) {
     // A glyph is special if the codepoint it corresponds to matches a
     // different glyph in the font
-    GlyphProperties *s = find_or_create_glyph_properties(&font->glyph_properties_hash_table, glyph_id);
-    if (s == NULL) return false;
-    if (!(s->data & SPECIAL_FILLED_MASK)) {
+    GlyphProperties s = find_glyph_properties(font->glyph_properties_hash_table, glyph_id);
+    if (!s.special_set) {
         bool is_special = cell_data->current_codepoint ? (
             glyph_id != glyph_id_for_codepoint(font->face, cell_data->current_codepoint) ? true : false)
             :
             false;
-        uint8_t val = is_special ? SPECIAL_VALUE_MASK : 0;
-        s->data |= val | SPECIAL_FILLED_MASK;
+        s.special_set = 1; s.special_val = is_special;
+        set_glyph_properties(font->glyph_properties_hash_table, glyph_id, s);
     }
-    return s->data & SPECIAL_VALUE_MASK;
+    return s.special_val;
 }
 
 static bool
 is_empty_glyph(glyph_index glyph_id, Font *font) {
     // A glyph is empty if its metrics have a width of zero
-    GlyphProperties *s = find_or_create_glyph_properties(&font->glyph_properties_hash_table, glyph_id);
-    if (s == NULL) return false;
-    if (!(s->data & EMPTY_FILLED_MASK)) {
-        uint8_t val = is_glyph_empty(font->face, glyph_id) ? EMPTY_VALUE_MASK : 0;
-        s->data |= val | EMPTY_FILLED_MASK;
+    GlyphProperties s = find_glyph_properties(font->glyph_properties_hash_table, glyph_id);
+    if (!s.empty_set) {
+        s.empty_val = is_glyph_empty(font->face, glyph_id) ? 1 : 0;
+        s.empty_set = 1;
+        set_glyph_properties(font->glyph_properties_hash_table, glyph_id, s);
     }
-    return s->data & EMPTY_VALUE_MASK;
+    return s.empty_val;
 }
 
 static unsigned int
@@ -1278,6 +1263,7 @@ test_shape(PyObject UNUSED *self, PyObject *args) {
         if (face == NULL) return NULL;
         font = calloc(1, sizeof(Font));
         font->face = face;
+        if (!init_hash_tables(font)) return NULL;
     } else {
         FontGroup *fg = font_groups;
         font = fg->fonts + fg->medium_font_idx;
@@ -1537,6 +1523,9 @@ initialize_font_group(FontGroup *fg) {
     fg->fonts = calloc(fg->fonts_capacity, sizeof(Font));
     if (fg->fonts == NULL) fatal("Out of memory allocating fonts array");
     fg->fonts_count = 1;  // the 0 index font is the box font
+    fg->fonts[0].sprite_position_hash_table = create_sprite_position_hash_table();
+    if (!init_hash_tables(fg->fonts)) fatal("Out of memory");
+    vt_init(&fg->fallback_font_map);
 #define I(attr)  if (descriptor_indices.attr) fg->attr##_font_idx = initialize_font(fg, descriptor_indices.attr, #attr); else fg->attr##_font_idx = -1;
     fg->medium_font_idx = initialize_font(fg, 0, "medium");
     I(bold); I(italic); I(bi);
@@ -1799,9 +1788,10 @@ parsed_font_feature_cmp(PyObject *self, PyObject *other, int op) {
 static Py_hash_t
 parsed_font_feature_hash(PyObject *s) {
     ParsedFontFeature *self = (ParsedFontFeature*)s;
-    if (self->hash_computed) return self->hashval;
-    self->hash_computed = true;
-    HASH_FUNCTION(&self->feature, sizeof(hb_feature_t), self->hashval);
+    if (!self->hash_computed) {
+        self->hash_computed = true;
+        self->hashval = vt_hash_bytes(&self->feature, sizeof(hb_feature_t));
+    }
     return self->hashval;
 }
 

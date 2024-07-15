@@ -240,25 +240,37 @@ class TestGraphics(BaseTest):
             dc.small_hole_threshold = small_hole_threshold
             data = {}
 
+        holes_to_create = 2, 4, 6, 8
         for i in range(25):
             self.assertIsNone(add(i, f'{i}' * i))
+            if i <= max(holes_to_create):
+                # We wait here to ensure data is written in order, otherwise the
+                # holes test below can fail
+                self.assertTrue(dc.wait_for_write())
 
         self.assertEqual(dc.total_size, sum(map(len, data.values())))
         self.assertTrue(dc.wait_for_write())
         check_data()
         sz = dc.size_on_disk()
         self.assertEqual(sz, sum(map(len, data.values())))
-        for x in (2, 4, 6, 8):
+        self.assertFalse(dc.holes())
+        holes = set()
+        for x in holes_to_create:
             remove(x)
+            holes.add(x)
             check_data()
             self.assertRaises(KeyError, dc.get, key_as_bytes(x))
             self.assertEqual(sz, dc.size_on_disk())
+            self.assertEqual(holes, {x[1] for x in dc.holes()})
         self.assertEqual(sz, dc.size_on_disk())
         # fill holes largest first to ensure small one doesnt go into large accidentally causing fragmentation
-        for x in sorted(('xy', 'C'*4, 'B'*6, 'A'*8), key=len, reverse=True):
+        for i, x in enumerate(sorted(holes, reverse=True)):
+            x = 'ABCDEFGH'[i] * x
             add(x, x)
             self.assertTrue(dc.wait_for_write())
             check_data()
+            holes.discard(len(x))
+            self.assertEqual(holes, {x[1] for x in dc.holes()})
             self.assertEqual(sz, dc.size_on_disk(), f'Disk cache has unexpectedly grown from {sz} to {dc.size_on_disk} with data: {x!r}')
         check_data()
         dc.clear()

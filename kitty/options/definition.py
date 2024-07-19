@@ -328,12 +328,17 @@ opt('cursor_underline_thickness', '2.0',
     long_text='The thickness of the underline cursor (in pts).'
     )
 
-opt('cursor_blink_interval', '-1',
-    option_type='float', ctype='time',
-    long_text='''
+opt('cursor_blink_interval', '-1', option_type='cursor_blink_interval', ctype='!cursor_blink_interval', long_text='''
 The interval to blink the cursor (in seconds). Set to zero to disable blinking.
 Negative values mean use system default. Note that the minimum interval will be
-limited to :opt:`repaint_delay`.
+limited to :opt:`repaint_delay`. You can also animate the cursor blink by specifying
+an :term:`easing function`. For example, setting this to option to :code:`0.5 ease-in-out`
+will cause the cursor blink to be animated over a second, in the first half of the second
+it will go from opaque to transparent and then back again over the next half. You can specify
+different easing functions for the two halves, for example: :code:`-1 linear ease-out`. kitty
+supports all the :link:`CSS easing functions <https://developer.mozilla.org/en-US/docs/Web/CSS/easing-function>`.
+Note that turning on animations uses extra power as it means the screen is redrawn multiple times
+per blink interval. See also, :opt:`cursor_stop_blinking_after`.
 '''
     )
 

@@ -185,6 +185,45 @@ active window. The default is to place the window in a layout dependent manner,
 typically, after the currently active window.
 
 
+--bias
+type=float
+default=0
+The bias used to alter the size of the window.
+It controls what fraction of available space the window takes. The exact meaning
+of bias depends on the current layout.
+
+* Splits layout: The bias is interpreted as a percentage between 0 and 100.
+When splitting a window into two, the new window will take up the specified fraction
+of the space alloted to the original window and the original window will take up
+the remainder of the space.
+
+* Vertical/horizontal layout: The bias is interpreted as adding/subtracting from the
+normal size of the window. It should be a number between -90 and 90. This number is
+the percentage of the OS Window size that should be added to the window size.
+So for example, if a window would normally have been size 50 in the layout inside an
+OS Window that is size 80 high and --bias -10 is used it will become *approximately*
+size 42 high. Note that sizes are approximations, you cannot use this method to
+create windows of fixed sizes.
+
+* Tall layout: If the window being created is the *first* window in a column, then
+the bias is interpreted as a percentage, as for the splits layout, splitting the OS
+Window width between columns. If the window is a second or subsequent window in a column
+the bias is interpreted as adding/subtracting from the window size as for the vertical
+layout above.
+
+* Fat layout: Same as tall layout except it goes by rows instead of columns.
+
+* Grid layout: The bias is interpreted the same way as for the Vertical and Horizontal
+layouts, as something to be added/subtracted to the normal size. However, the
+since in a grid layout there are rows *and* columns, the bias on the first window in a column
+operates on the columns. Any later windows in that column operate on the row.
+So, for example, if you bias the first window in a grid layout it will change the width
+of the first column, the second window, the width of the second column, the third window,
+the height of the second row and so on.
+
+The bias option was introduced in kitty version 0.36.0.
+
+
 --allow-remote-control
 type=bool-set
 Programs running in this window can control kitty (even if remote control is not
@@ -433,6 +472,7 @@ class LaunchKwds(TypedDict):
     overlay_for: Optional[int]
     stdin: Optional[bytes]
     hold: bool
+    bias: Optional[float]
 
 
 def apply_colors(window: Window, spec: Sequence[str]) -> None:
@@ -520,11 +560,14 @@ def _launch(
         'overlay_for': None,
         'stdin': None,
         'hold': False,
+        'bias': None,
     }
     spacing = {}
     if opts.spacing:
         from .rc.set_spacing import parse_spacing_settings, patch_window_edges
         spacing = parse_spacing_settings(opts.spacing)
+    if opts.bias:
+        kw['bias'] = max(-100, min(opts.bias, 100))
     if opts.cwd:
         if opts.cwd == 'current':
             if active:

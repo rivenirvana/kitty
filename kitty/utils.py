@@ -14,6 +14,7 @@ from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
+    BinaryIO,
     Callable,
     Dict,
     Generator,
@@ -33,6 +34,7 @@ from typing import (
 
 from .constants import (
     appname,
+    cache_dir,
     clear_handled_signals,
     config_dir,
     is_macos,
@@ -44,7 +46,6 @@ from .constants import (
 )
 from .fast_data_types import WINDOW_FULLSCREEN, WINDOW_MAXIMIZED, WINDOW_MINIMIZED, WINDOW_NORMAL, Color, Shlex, get_options, monotonic, open_tty
 from .fast_data_types import timed_debug_print as _timed_debug_print
-from .rgb import to_color
 from .types import run_once
 from .typing import AddressFamily, PopenType, Socket, StartupCtx
 
@@ -162,26 +163,6 @@ def color_as_int(val: Color) -> int:
 
 def color_from_int(val: int) -> Color:
     return Color((val >> 16) & 0xFF, (val >> 8) & 0xFF, val & 0xFF)
-
-
-def parse_color_set(raw: str) -> Generator[Tuple[int, Optional[int]], None, None]:
-    parts = raw.split(';')
-    lp = len(parts)
-    if lp % 2 != 0:
-        return
-    for c_, spec in [parts[i:i + 2] for i in range(0, len(parts), 2)]:
-        try:
-            c = int(c_)
-            if c < 0 or c > 255:
-                continue
-            if spec == '?':
-                yield c, None
-            else:
-                q = to_color(spec)
-                if q is not None:
-                    yield c, int(q) & 0xffffff
-        except Exception:
-            continue
 
 
 class ScreenSize(NamedTuple):
@@ -1244,3 +1225,32 @@ def shlex_split_with_positions(text: str, allow_ansi_quoted_strings: bool = Fals
 
 def timed_debug_print(*a: Any, sep: str = ' ', end: str = '\n') -> None:
     _timed_debug_print(sep.join(map(str, a)) + end)
+
+
+def cached_rgba_file_descriptor_for_image_path(path: str) -> Tuple[int, int, int]:
+    from hashlib import sha256
+    path = os.path.realpath(path, strict=True)
+    src_info = os.stat(path)
+    output_name = sha256(path.encode()).hexdigest() + '.rgba'
+    output_path = os.path.join(cache_dir(), 'rgba', output_name)
+
+    def read_data(f: BinaryIO) -> Tuple[int, int, int]:
+        header = f.read(8)
+        import struct
+        width, height = struct.unpack('<II', header)
+        return width, height, os.dup(f.fileno())
+
+    with suppress(OSError), open(output_path, 'rb') as f:
+        dest_info = os.stat(f.fileno())
+        if dest_info.st_size == src_info.st_size and dest_info.st_mtime >= src_info.st_mtime:
+            return read_data(f)
+
+    import subprocess
+    cp = subprocess.run([kitten_exe(), '__render_image__', path], capture_output=True)
+    if cp.returncode != 0:
+        raise ValueError(f'Failed to convert path to RGBA data with error: {cp.stderr.decode("utf-8", "replace")}')
+    ans = cp.stdout.decode().strip()
+    if ans != output_path:
+        raise ValueError(f'The two cache name algorithms dont agree for path: {path}\n{output_path} != {ans}')
+    with open(ans, 'rb') as f:
+        return read_data(f)

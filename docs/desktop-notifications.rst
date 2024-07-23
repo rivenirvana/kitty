@@ -93,6 +93,48 @@ to display it based on what it does understand.
    Similarly, features such as scheduled notifications could be added in future
    revisions.
 
+Querying for support
+-------------------------
+
+.. versionadded:: 0.36.0
+   The ability to query for support was added in kitty 0.36.0
+
+An application can query the terminal emulator for support of this protocol, by
+sending the following escape code::
+
+    <OSC> 99 ; i=<some identifier> : p=? ; <terminator>
+
+A conforming terminal must respond with an escape code of the form::
+
+    <OSC> 99 ; i=<some identifier> : p=? ; key=value : key=value <terminator>
+
+The identifier is present to support terminal multiplexers, so that they know
+which window to redirect the query response too.
+
+Here, the ``key=value`` parts specify details about what the terminal
+implementation supports. Currently, the following keys are defined:
+
+=======  ================================================================================
+Key      Value
+=======  ================================================================================
+``a``    Comma separated list of actions from the ``a`` key that the terminal
+         implements. If no actions are supported, the ``a`` key must be absent from the
+         query response.
+
+``o``    Comma separated list of occassions from the ``o`` key that the
+         terminal implements. If no occassions are supported, the value
+         ``o=always`` must be sent in the query response.
+
+``u``    Comma separated list of urgency values that the terminal implements.
+         If urgency is not supported, the ``u`` key must be absent from the
+         query response.
+=======  ================================================================================
+
+In the future, if this protocol expands, more keys might be added. Clients must
+ignore keys they dont understand in the query response.
+
+Specification of all keys used in the protocol
+--------------------------------------------------
 
 =======  ====================  ========== =================
 Key      Value                 Default    Description
@@ -109,10 +151,12 @@ Key      Value                 Default    Description
 ``e``    ``0`` or ``1``        ``0``      If set to ``1`` means the payload is Base64 encoded UTF-8,
                                           otherwise it is plain UTF-8 text with no C0 control codes in it
 
-``i``    ``[a-zA-Z0-9-_+.]``   ``0``      Identifier for the notification
+``i``    ``[a-zA-Z0-9-_+.]``   ``0``      Identifier for the notification. Make these globally unqiue,
+                                          like an UUID, so that termial multiplxers can
+                                          direct responses to the correct window.
 
-``p``    One of ``title`` or   ``title``  Whether the payload is the notification title or body. If a
-         ``body``.                        notification has no title, the body will be used as title.
+``p``    One of ``title``,     ``title``  Whether the payload is the notification title or body or query. If a
+         ``body`` or ``?``                notification has no title, the body will be used as title.
 
 ``o``    One of ``always``,    ``always`` When to honor the notification request. ``unfocused`` means when the window
          ``unfocused`` or                 the notification is sent on does not have keyboard focus. ``invisible``

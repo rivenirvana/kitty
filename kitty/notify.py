@@ -78,6 +78,14 @@ class NotifyImplementation:
 notify_implementation = NotifyImplementation()
 
 
+class PayloadType(Enum):
+    unknown = ''
+    title = 'title'
+    body = 'body'
+    query = '?'
+    close = 'close'
+
+
 class OnlyWhen(Enum):
     unset = ''
     always = 'always'
@@ -137,20 +145,24 @@ class QueryResponse(Exception):
         self.response_string = response_string
 
 
-def parse_osc_99(raw: str) -> NotificationCommand:
+def parse_osc_99(raw: str, log_warnings: bool = True) -> NotificationCommand:
     cmd = NotificationCommand()
     metadata, payload = raw.partition(';')[::2]
     payload_is_encoded = False
-    payload_type = 'title'
+    payload_type = PayloadType.title
     if metadata:
         for part in metadata.split(':'):
             try:
                 k, v = part.split('=', 1)
             except Exception:
-                log_error('Malformed OSC 99: metadata is not key=value pairs')
+                if log_warnings:
+                    log_error('Malformed OSC 99: metadata is not key=value pairs')
                 return cmd
             if k == 'p':
-                payload_type = v
+                try:
+                    payload_type = PayloadType(v)
+                except ValueError:
+                    payload_type = PayloadType.unknown
             elif k == 'i':
                 cmd.identifier = sanitize_id(v)
             elif k == 'e':
@@ -176,26 +188,29 @@ def parse_osc_99(raw: str) -> NotificationCommand:
             elif k == 'u':
                 with suppress(Exception):
                     cmd.urgency = Urgency(int(v))
-    if payload_type == '?':
-        actions = ','.join(x.name for x in Action)
-        when = ','.join(x.name for x in OnlyWhen if x.value)
+    if payload_type is PayloadType.query:
+        actions = ','.join(x.value for x in Action)
+        when = ','.join(x.value for x in OnlyWhen if x.value)
         urgency = ','.join(str(x.value) for x in Urgency)
         i = f'i={sanitize_id(cmd.identifier or "0")}:'
-        raise QueryResponse(f'99;{i}p=?;a={actions}:o={when}:u={urgency}')
+        p = ','.join(x.value for x in PayloadType if x.value)
+        raise QueryResponse(f'99;{i}p=?;a={actions}:o={when}:u={urgency}:p={p}')
 
-    if payload_type not in ('body', 'title'):
-        log_error(f'Malformed OSC 99: unknown payload type: {payload_type}')
-        return NotificationCommand()
-    if payload_is_encoded:
-        try:
-            payload = standard_b64decode(payload).decode('utf-8')
-        except Exception:
-            log_error('Malformed OSC 99: payload is not base64 encoded UTF-8 text')
-            return NotificationCommand()
-    if payload_type == 'title':
-        cmd.title = payload
+    if payload_type in (PayloadType.title, PayloadType.body):
+        if payload_is_encoded:
+            try:
+                payload = standard_b64decode(payload).decode('utf-8')
+            except Exception:
+                if log_warnings:
+                    log_error('Malformed OSC 99: payload is not base64 encoded UTF-8 text')
+                return NotificationCommand()
+        if payload_type is PayloadType.title:
+            cmd.title = payload
+        else:
+            cmd.body = payload
     else:
-        cmd.body = payload
+        if log_warnings:
+            log_error(f'OSC 99: unknown payload type: {payload_type}, ignoring payload')
     return cmd
 
 
@@ -293,10 +308,11 @@ def handle_notification_cmd(
     raw_data: str,
     window_id: int,
     prev_cmd: NotificationCommand,
-    notify_implementation: NotifyImplementation = notify_implementation
+    notify_implementation: NotifyImplementation = notify_implementation,
+    log_warnings: bool = True,
 ) -> Optional[NotificationCommand]:
     if osc_code == 99:
-        cmd = merge_osc_99(prev_cmd, parse_osc_99(raw_data))
+        cmd = merge_osc_99(prev_cmd, parse_osc_99(raw_data, log_warnings=log_warnings))
         if cmd.done:
             notify_with_command(cmd, window_id, notify_implementation)
             cmd = NotificationCommand()

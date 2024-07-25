@@ -543,6 +543,8 @@ def os_window_has_background_image(os_window_id: int) -> bool:
     pass
 
 
+def dbus_set_notification_callback(c: Optional[Callable[[str, int, Union[str, int]], None]]) -> None: ...
+
 def dbus_send_notification(
     app_name: str,
     icon: str,
@@ -555,8 +557,11 @@ def dbus_send_notification(
     pass
 
 
+def dbus_close_notification(dbus_notification_id: int) -> bool: ...
+
+
 def cocoa_send_notification(
-    identifier: Optional[str],
+    identifier: str,
     title: str,
     body: Optional[str],
     subtitle: Optional[str],
@@ -564,6 +569,7 @@ def cocoa_send_notification(
 ) -> None:
     pass
 
+def cocoa_remove_delivered_notification(identifier: str) -> bool: ...
 
 def create_os_window(
     get_window_size: Callable[[int, int, int, int, float, float], Tuple[int,
@@ -832,7 +838,7 @@ def os_window_font_size(
     pass
 
 
-def cocoa_set_notification_activated_callback(identifier: Optional[Callable[[str], None]]) -> None:
+def cocoa_set_notification_activated_callback(identifier: Optional[Callable[[str, bool], None]]) -> None:
     pass
 
 
@@ -1692,3 +1698,18 @@ class MousePosition(TypedDict):
     in_left_half_of_cell: bool
 
 def get_mouse_data_for_window(os_window_id: int, tab_id: int, window_id: int) -> Optional[MousePosition]: ...
+
+
+class DiskCache:
+    small_hole_threshold: int
+    defrag_factor: int
+    @property
+    def total_size(self) -> int: ...
+
+    def add(self, key: bytes, data: bytes) -> None: ...
+    def remove(self, key: bytes) -> bool: ...
+    def remove_from_ram(self, predicate: Callable[[bytes], bool]) -> int: ...
+    def num_cached_in_ram(self) -> int: ...
+    def get(self, key: bytes, store_in_ram: bool = False) -> bytes: ...  # raises KeyError if not found
+    def size_on_disk(self) -> int: ...
+    def clear(self) -> None: ...

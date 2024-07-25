@@ -1419,10 +1419,34 @@ error_callback(int error, const char* description) {
 
 
 #ifndef __APPLE__
+static PyObject *dbus_notification_callback = NULL;
+
+static PyObject*
+dbus_set_notification_callback(PyObject *self UNUSED, PyObject *callback) {
+    Py_CLEAR(dbus_notification_callback);
+    if (callback && callback != Py_None) { dbus_notification_callback = callback; Py_INCREF(callback); }
+    Py_RETURN_NONE;
+}
+
+#define send_dbus_notification_event_to_python(event_type, a, b) { \
+    if (dbus_notification_callback) { \
+        const char call_args_fmt[] = {'s', \
+            _Generic((a), unsigned long : 'k', unsigned long long : 'K'), _Generic((b), unsigned long : 'k', const char* : 's') }; \
+        RAII_PyObject(ret, PyObject_CallFunction(dbus_notification_callback, call_args_fmt, event_type, a, b)); \
+        if (!ret) PyErr_Print(); \
+    } \
+}
+
+
 static void
-dbus_user_notification_activated(uint32_t notification_id, const char* action) {
+dbus_user_notification_activated(uint32_t notification_id, int type, const char* action) {
     unsigned long nid = notification_id;
-    call_boss(dbus_notification_callback, "Oks", Py_True, nid, action);
+    const char *stype = "activated";
+    switch (type) {
+        case 0: stype = "closed"; break;
+        case 1: stype = "activation_token"; break;
+    }
+    send_dbus_notification_event_to_python(stype, nid, action);
 }
 #endif
 
@@ -2064,7 +2088,7 @@ request_frame_render(OSWindow *w) {
 void
 dbus_notification_created_callback(unsigned long long notification_id, uint32_t new_notification_id, void* data UNUSED) {
     unsigned long new_id = new_notification_id;
-    call_boss(dbus_notification_callback, "OKk", Py_False, notification_id, new_id);
+    send_dbus_notification_event_to_python("created", notification_id, new_id);
 }
 
 static PyObject*
@@ -2079,6 +2103,19 @@ dbus_send_notification(PyObject *self UNUSED, PyObject *args) {
     unsigned long long notification_id = glfwDBusUserNotify(app_name, icon, summary, body, action_name, timeout, urgency, dbus_notification_created_callback, NULL);
     return PyLong_FromUnsignedLongLong(notification_id);
 }
+
+static PyObject*
+dbus_close_notification(PyObject *self UNUSED, PyObject *args) {
+    unsigned int id;
+    if (!PyArg_ParseTuple(args, "I", &id)) return NULL;
+    if (!glfwDBusUserNotify) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to load glfwDBusUserNotify, did you call glfw_init?");
+        return NULL;
+    }
+    if (glfwDBusUserNotify("", "", "", "", "", -9999, -9999, NULL, &id)) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
 
 #endif
 
@@ -2244,6 +2281,8 @@ static PyMethodDef module_methods[] = {
     METHODB(strip_csi, METH_O),
 #ifndef __APPLE__
     METHODB(dbus_send_notification, METH_VARARGS),
+    METHODB(dbus_close_notification, METH_VARARGS),
+    METHODB(dbus_set_notification_callback, METH_O),
 #else
     {"cocoa_recreate_global_menu", (PyCFunction)py_recreate_global_menu, METH_NOARGS, ""},
     {"cocoa_clear_global_shortcuts", (PyCFunction)py_clear_global_shortcuts, METH_NOARGS, ""},
@@ -2267,6 +2306,7 @@ void cleanup_glfw(void) {
     logo.pixels = NULL;
     Py_CLEAR(edge_spacing_func);
 #ifndef __APPLE__
+    Py_CLEAR(dbus_notification_callback);
     release_freetype_render_context(csd_title_render_ctx);
 #endif
 }

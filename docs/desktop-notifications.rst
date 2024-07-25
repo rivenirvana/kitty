@@ -54,9 +54,12 @@ limit to avoid Denial-of-Service attacks). The size of the payload must be no
 longer than ``2048`` bytes, *before being encoded*.
 
 Both the ``title`` and ``body`` payloads must be either UTF-8 encoded plain
-text with no embedded escape codes, or UTF-8 text that is Base64 encoded, in
-which case there must be an ``e=1`` key in the metadata to indicate the payload
-is Base64 encoded.
+text with no embedded escape codes, or UTF-8 text that is :rfc:`base64 <4648>`
+encoded, in which case there must be an ``e=1`` key in the metadata to indicate
+the payload is :rfc:`base64 <4648>` encoded.
+
+Being informed when user activates the notification
+-------------------------------------------------------
 
 When the user clicks the notification, a couple of things can happen, the
 terminal emulator can focus the window from which the notification came, and/or
@@ -93,6 +96,33 @@ to display it based on what it does understand.
    Similarly, features such as scheduled notifications could be added in future
    revisions.
 
+Being informed when a notification is closed
+------------------------------------------------
+
+.. versionadded:: 0.36.0
+   Notifications of close events were added in kitty version 0.36.0
+
+If you wish to be informed when a notification is closed, you can specify
+``c=1`` when sending the notification. For example::
+
+    <OSC> 99 ; i=mynotification : c=1 ; hello world <terminator>
+
+Then, the terminal will send the following
+escape code to inform when the notification is closed::
+
+    <OSC> 99 ; i=mynotification : p=close ; <terminator>
+
+If no notification id was specified ``i=0`` will be used.
+If ``a=report`` is specified and the notification is activated/clicked on
+then both the activation report and close notification are sent.
+
+.. note::
+   Close events are best effort, some platforms such as macOS do not have
+   events when notifications are closed. Applications can use the
+   :ref:`notifications_query` to check if close events are supported
+   by the current terminal emulator.
+
+
 Closing an existing notification
 ----------------------------------
 
@@ -103,26 +133,11 @@ To close a previous notification, send::
 
     <OSC> i=<notification id> : p=close ; <terminator>
 
-This will close a previous notification with the specified id. If you want a
-notification when closing succeeds, send the following instead::
+This will close a previous notification with the specified id. If no such
+notification exists (perhaps because it was already closed or it was activated)
+then the request is ignored.
 
-    <OSC> i=<notification id> : p=close ; notify <terminator>
-
-Then, the terminal will respond with::
-
-    <OSC> i=<notification id> : p=close ; <terminator>
-
-This escape code is sent by the terminal if the notification is closed
-or was already closed when the close request arrives, or a notification
-with the specified identifier does not exist. If the notification is activated,
-before it can be closed, then the close response is sent only if there is no
-activation response. In other words, if you close a response and request
-notification, you will get either of the following two responses::
-
-    <OSC> i=<notification id> : p=close ; <terminator>  # closed
-
-    <OSC> i=<notification id> ; <terminator>  # activated
-
+.. _notifications_query:
 
 Querying for support
 -------------------------
@@ -163,6 +178,9 @@ Key      Value
 ``p``    Comma spearated list of supported payload types (i.e. values of the
          ``p`` key that the terminal implements). These must contain at least
          ``title`` and ``body``.
+
+``c``    ``c=1`` if the terminal supports close events, otherwise the ``c``
+         must be omitted.
 =======  ================================================================================
 
 In the future, if this protocol expands, more keys might be added. Clients must
@@ -189,7 +207,7 @@ Key      Value                 Default    Description
 ``d``    ``0`` or ``1``        ``1``      Indicates if the notification is
                                           complete or not.
 
-``e``    ``0`` or ``1``        ``0``      If set to ``1`` means the payload is Base64 encoded UTF-8,
+``e``    ``0`` or ``1``        ``0``      If set to ``1`` means the payload is :rfc:`base64 <4648>` encoded UTF-8,
                                           otherwise it is plain UTF-8 text with no C0 control codes in it
 
 ``i``    ``[a-zA-Z0-9-_+.]``   ``0``      Identifier for the notification. Make these globally unqiue,
@@ -208,8 +226,11 @@ Key      Value                 Default    Description
                                           and not visible to the user, for example, because it is in an inactive tab or
                                           its OS window is not currently active.
                                           ``always`` is the default and always honors the request.
+
 ``u``    ``0, 1 or 2``         ``unset``  The *urgency* of the notification. ``0`` is low, ``1`` is normal and ``2`` is critical.
                                           If not specified normal is used.
+
+``c``    ``0`` or ``1``        ``0``      When non-zero an escape code is sent to the application when the notification is closed.
 =======  ====================  ========== =================
 
 

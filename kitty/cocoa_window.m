@@ -413,6 +413,14 @@ cocoa_send_notification(PyObject *self UNUSED, PyObject *args) {
 @interface NotificationDelegate : NSObject <UNUserNotificationCenterDelegate>
 @end
 
+static void
+do_notification_callback(NSString *identifier, bool activated) {
+    PyObject *ret = PyObject_CallFunction(notification_activated_callback, "zO",
+            (identifier ? [identifier UTF8String] : NULL), activated ? Py_True : Py_False);
+    if (ret) Py_DECREF(ret);
+    else PyErr_Print();
+}
+
 @implementation NotificationDelegate
     - (void)userNotificationCenter:(UNUserNotificationCenter *)center
             willPresentNotification:(UNNotification *)notification
@@ -429,11 +437,12 @@ cocoa_send_notification(PyObject *self UNUSED, PyObject *args) {
             withCompletionHandler:(void (^)(void))completionHandler {
         (void)(center);
         if (notification_activated_callback) {
-            NSString *identifier = [[[response notification] request] identifier];
-            PyObject *ret = PyObject_CallFunction(notification_activated_callback, "z",
-                    identifier ? [identifier UTF8String] : NULL);
-            if (ret == NULL) PyErr_Print();
-            else Py_DECREF(ret);
+            if ([response.actionIdentifier isEqualToString:UNNotificationDefaultActionIdentifier]) {
+                do_notification_callback([[[response notification] request] identifier], true);
+            } else if ([response.actionIdentifier isEqualToString:UNNotificationDismissActionIdentifier]) {
+                // this never actually happens on macOS. Bloody Crapple.
+                do_notification_callback([[[response notification] request] identifier], false);
+            }
         }
         completionHandler();
     }
@@ -453,6 +462,14 @@ get_notification_center_safely(void) {
                             [[e name] UTF8String], [[e reason] UTF8String]);
     }
     return center;
+}
+
+static bool
+remove_delivered_notification(const char *identifier) {
+    UNUserNotificationCenter *center = get_notification_center_safely();
+    if (!center) return false;
+    [center removeDeliveredNotificationsWithIdentifiers:@[ @(identifier) ]];
+    return true;
 }
 
 static void
@@ -533,9 +550,16 @@ drain_pending_notifications(BOOL granted) {
 }
 
 static PyObject*
+cocoa_remove_delivered_notification(PyObject *self UNUSED, PyObject *x) {
+    if (!PyUnicode_Check(x)) { PyErr_SetString(PyExc_TypeError, "identifier must be a string"); return NULL; }
+    if (remove_delivered_notification(PyUnicode_AsUTF8(x))) { Py_RETURN_TRUE; }
+    Py_RETURN_FALSE;
+}
+
+static PyObject*
 cocoa_send_notification(PyObject *self UNUSED, PyObject *args) {
     char *identifier = NULL, *title = NULL, *body = NULL, *subtitle = NULL; int urgency = 1;
-    if (!PyArg_ParseTuple(args, "zsz|zi", &identifier, &title, &body, &subtitle, &urgency)) return NULL;
+    if (!PyArg_ParseTuple(args, "ssz|zi", &identifier, &title, &body, &subtitle, &urgency)) return NULL;
 
     UNUserNotificationCenter *center = get_notification_center_safely();
     if (!center) Py_RETURN_NONE;
@@ -546,7 +570,7 @@ cocoa_send_notification(PyObject *self UNUSED, PyObject *args) {
     // otherwise macOS refuses to show the preference checkbox for enable/disable notification sound.
     [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge)
         completionHandler:^(BOOL granted, NSError * _Nullable error) {
-            if (error != nil) {
+            if (!granted && error != nil) {
                 log_error("Failed to request permission for showing notification: %s", [[error localizedDescription] UTF8String]);
             }
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -1048,6 +1072,7 @@ static PyMethodDef module_methods[] = {
     {"cocoa_get_lang", (PyCFunction)cocoa_get_lang, METH_NOARGS, ""},
     {"cocoa_set_global_shortcut", (PyCFunction)cocoa_set_global_shortcut, METH_VARARGS, ""},
     {"cocoa_send_notification", (PyCFunction)cocoa_send_notification, METH_VARARGS, ""},
+    {"cocoa_remove_delivered_notification", (PyCFunction)cocoa_remove_delivered_notification, METH_O, ""},
     {"cocoa_set_notification_activated_callback", (PyCFunction)set_notification_activated_callback, METH_O, ""},
     {"cocoa_set_url_handler", (PyCFunction)cocoa_set_url_handler, METH_VARARGS, ""},
     {"cocoa_set_app_icon", (PyCFunction)cocoa_set_app_icon, METH_VARARGS, ""},

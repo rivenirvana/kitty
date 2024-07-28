@@ -127,21 +127,41 @@ escape code to inform when the notification is closed::
 
 If no notification id was specified ``i=0`` will be used.
 If ``a=report`` is specified and the notification is activated/clicked on
-then both the activation report and close notification are sent.
+then both the activation report and close notification are sent. If the notification
+is updated then the close event is not sent unless the updated notification
+also requests a close notification.
 
-.. note:: On macOS the OS does not supply notification
-   closed events to applications. As such close events must be implemented
-   via polling. It is up to the terminal emulator to decide a reasonable
-   time limit for how long to poll, before giving up. kitty polls for 60
-   seconds. Therefore, terminal applications should not rely on close events
-   being authoritative.
+Note that on some platforms, such as macOS, the OS does not inform applications
+when notifications are closed, on such platforms, terminals reply with::
+
+    <OSC> 99 ; i=mynotification : p=close ; untracked <terminator>
+
+This means that the terminal has no way of knowing when the notification is
+closed. Instead, applications can poll the terminal to determine which
+notifications are still alive (not closed), with::
+
+    <OSC> 99 ; i=myid : p=alive ; <terminator>
+
+The terminal will reply with::
+    <OSC> 99 ; i=myid : p=alive ; id1,id2,id3 <terminator>
+
+Here, ``myid`` is present for multiplxer support. The reponse from the terminal
+contains a comma separated list of ids that are still alive.
 
 
-Closing an existing notification
-----------------------------------
+Updating or closing an existing notification
+----------------------------------------------
 
 .. versionadded:: 0.36.0
-   The ability to close a previous notification was added in kitty 0.36.0
+   The ability to update and close a previous notification was added in kitty 0.36.0
+
+To update a previous notification simply send a new notification with the same
+*notification id* (``i`` key) as the one you want to update. If the original
+notification is still displayed it will be replaced, otherwise a new
+notification is displayed. This can be used, for example, to show progress of
+an operation. Note that how smoothly the existing notification is replaced
+depends on the underlying OS, for example, on Linux the replacement is usually flicker
+free, on macOS it isn't, because of Apple's design choices.
 
 To close a previous notification, send::
 
@@ -150,6 +170,20 @@ To close a previous notification, send::
 This will close a previous notification with the specified id. If no such
 notification exists (perhaps because it was already closed or it was activated)
 then the request is ignored.
+
+
+Automatically expiring notifications
+-------------------------------------
+
+A notification can be marked as expiring (being closed) automatically after
+a specified number of milliseconds using the ``w`` key. The default if
+unspecified is ``-1`` which means to use whatever expiry policy the OS has for
+notifications. A value of ``0`` means the notification should never expire.
+Values greater than zero specify the number of milliseconds after which the
+notification should be auto-closed. Note that the value of ``0``
+is best effort, some platforms honor it and some do not. Positive values
+are robust, since they can be implemented by the terminal emulator itself,
+by manually closing the notification after the expiry time.
 
 .. _notifications_query:
 
@@ -195,6 +229,8 @@ Key      Value
 
 ``c``    ``c=1`` if the terminal supports close events, otherwise the ``c``
          must be omitted.
+
+``w``    ``w=1`` if the terminal supports auto expiring of notifications.
 =======  ================================================================================
 
 In the future, if this protocol expands, more keys might be added. Clients must
@@ -232,7 +268,7 @@ Key      Value                 Default    Description
 ``p``    One of ``title``,     ``title``  Whether the payload is the notification title or body or query. If a
          ``body``,                        notification has no title, the body will be used as title. Terminal
          ``close``,                       emulators should ignore payloads of unknown type to allow for future
-         ``?``                            expansion of this protocol.
+         ``?``, ``alive``                 expansion of this protocol.
 
 
 ``o``    One of ``always``,    ``always`` When to honor the notification request. ``unfocused`` means when the window
@@ -254,6 +290,8 @@ Key      Value                 Default    Description
 ``t``    :rfc:`base64 <4648>`  ``unset``  The type of the notification. Can be used to filter out notifications.
          encoded UTF-8
          notification type
+
+``w``    ``>=-1``              ``-1``     The number of milliseconds to auto-close the notification after.
 =======  ====================  ========== =================
 
 

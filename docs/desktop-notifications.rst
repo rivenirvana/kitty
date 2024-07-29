@@ -33,7 +33,7 @@ notification from a shell script::
 To show a message with a title and a body::
 
     printf '\x1b]99;i=1:d=0;Hello world\x1b\\'
-    printf '\x1b]99;i=1:d=1:p=body;This is cool\x1b\\'
+    printf '\x1b]99;i=1:p=body;This is cool\x1b\\'
 
 The most important key in the metadata is the ``p`` key, it controls how the
 payload is interpreted. A value of ``title`` means the payload is setting the
@@ -46,18 +46,18 @@ code can be. Chunking is accomplished by the ``i`` and ``d`` keys. The ``i``
 key is the *notification id* which can be any string containing the characters
 ``[a-zA-Z0-9_-+.]``. The ``d`` key stands for *done* and can only take the
 values ``0`` and ``1``. A value of ``0`` means the notification is not yet done
-and the terminal emulator should hold off displaying it. A value of ``1`` means
+and the terminal emulator should hold off displaying it. A non-zero value means
 the notification is done, and should be displayed. You can specify the title or
 body multiple times and the terminal emulator will concatenate them, thereby
 allowing arbitrarily long text (terminal emulators are free to impose a sensible
 limit to avoid Denial-of-Service attacks). The size of the payload must be no
-longer than ``4096`` bytes, *before being encoded*.
+longer than ``2048`` bytes, *before being encoded* or ``4096`` encoded bytes.
 
-Both the ``title`` and ``body`` payloads must be either UTF-8 encoded plain
-text with no embedded escape codes, or UTF-8 text that is :rfc:`base64 <4648>`
-encoded, in which case there must be an ``e=1`` key in the metadata to indicate
-the payload is :rfc:`base64 <4648>` encoded. No HTML or other markup in the
-plain text is allowed. It is strictly plain text, to be interpreted as such.
+Both the ``title`` and ``body`` payloads must be either :ref:`safe_utf8` text ,
+or UTF-8 text that is :ref:`base64` encoded, in which case there must be an
+``e=1`` key in the metadata to indicate the payload is :ref:`base64`
+encoded. No HTML or other markup in the plain text is allowed. It is strictly
+plain text, to be interpreted as such.
 
 Allowing users to filter notifications
 -------------------------------------------------------
@@ -66,9 +66,25 @@ Well behaved applications should identify themselves to the terminal
 by means of two keys ``f`` which is the application name and ``t``
 which is the notification type. These are free form keys, they can contain
 any values, their purpose is to allow users to easily filter out
-notifications they do not want. Both keys must have :rfc:`base64 <4648>`
-encoded UTF-8 text as their values. Terminals can then present UI to users
-to allow them to filter out notifications from applications they do not want.
+notifications they do not want. Both keys must have :ref:`base64`
+encoded UTF-8 text as their values. The ``t`` key can be specified multiple
+times, as notifications can have more than one type. See the `freedesktop.org
+spec
+<https://specifications.freedesktop.org/notification-spec/notification-spec-latest.html#categories>`__
+for examples of notification types.
+
+.. note::
+   The application name should generally be set to the filename of the
+   applications `desktop file
+   <https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#file-naming>`__
+   (without the ``.desktop`` part) or the bundle identifier for a macOS
+   application. While not strictly necessary, this allows the terminal
+   emulator to deduce an icon for the notification when one is not specified.
+
+.. note::
+
+   |kitty| has sophisticated notification filtering and management
+   capabilities via :opt:`filter_notification`.
 
 
 Being informed when user activates the notification
@@ -93,21 +109,13 @@ off, so for example if you do not want any action, turn off the default
 
     a=-focus
 
-Complete specification of all the metadata keys is in the table below. If a
-terminal emulator encounters a key in the metadata it does not understand,
+Complete specification of all the metadata keys is in the :ref:`table below <keys_in_notificatons_protocol>`.
+If a terminal emulator encounters a key in the metadata it does not understand,
 the key *must* be ignored, to allow for future extensibility of this escape
 code. Similarly if values for known keys are unknown, the terminal emulator
-*should* either ignore the entire escape code or perform a best guess effort
-to display it based on what it does understand.
+*should* either ignore the entire escape code or perform a best guess effort to
+display it based on what it does understand.
 
-.. note::
-   It is possible to extend this escape code to allow specifying an icon for
-   the notification, however, given that some platforms, such as legacy versions
-   of macOS, don't allow displaying custom images on a notification, it was
-   decided to leave it out of the spec for the time being.
-
-   Similarly, features such as scheduled notifications could be added in future
-   revisions.
 
 Being informed when a notification is closed
 ------------------------------------------------
@@ -143,9 +151,10 @@ notifications are still alive (not closed), with::
     <OSC> 99 ; i=myid : p=alive ; <terminator>
 
 The terminal will reply with::
+
     <OSC> 99 ; i=myid : p=alive ; id1,id2,id3 <terminator>
 
-Here, ``myid`` is present for multiplxer support. The reponse from the terminal
+Here, ``myid`` is present for multiplexer support. The response from the terminal
 contains a comma separated list of ids that are still alive.
 
 
@@ -217,32 +226,34 @@ Key      Value
          implements. If no actions are supported, the ``a`` key must be absent from the
          query response.
 
-``o``    Comma separated list of occassions from the ``o`` key that the
-         terminal implements. If no occassions are supported, the value
-         ``o=always`` must be sent in the query response.
+``c``    ``c=1`` if the terminal supports close events, otherwise the ``c``
+         must be omitted.
 
-``u``    Comma separated list of urgency values that the terminal implements.
-         If urgency is not supported, the ``u`` key must be absent from the
-         query response.
+``o``    Comma separated list of occassions from the ``o`` key that the
+         terminal implements. If no occasions are supported, the value
+         ``o=always`` must be sent in the query response.
 
 ``p``    Comma spearated list of supported payload types (i.e. values of the
          ``p`` key that the terminal implements). These must contain at least
          ``title`` and ``body``.
 
-``c``    ``c=1`` if the terminal supports close events, otherwise the ``c``
-         must be omitted.
+``u``    Comma separated list of urgency values that the terminal implements.
+         If urgency is not supported, the ``u`` key must be absent from the
+         query response.
 
 ``w``    ``w=1`` if the terminal supports auto expiring of notifications.
 =======  ================================================================================
 
 In the future, if this protocol expands, more keys might be added. Clients must
-ignore keys they dont understand in the query response.
+ignore keys they do not understand in the query response.
 
 To check if a terminal emulator supports this notifications protocol the best way is to
 send the above *query action* followed by a request for the `primary device
 attributes <https://vt100.net/docs/vt510-rm/DA1.html>`_. If you get back an
 answer for the device attributes without getting back an answer for the *query
 action* the terminal emulator does not support this notifications protocol.
+
+.. _keys_in_notificatons_protocol:
 
 Specification of all keys used in the protocol
 --------------------------------------------------
@@ -256,22 +267,22 @@ Key      Value                 Default    Description
          optional leading
          ``-``
 
+``c``    ``0`` or ``1``        ``0``      When non-zero an escape code is sent to the application when the notification is closed.
+
 ``d``    ``0`` or ``1``        ``1``      Indicates if the notification is
                                           complete or not. A non-zero value
                                           means it is complete.
 
-``e``    ``0`` or ``1``        ``0``      If set to ``1`` means the payload is :rfc:`base64 <4648>` encoded UTF-8,
+``e``    ``0`` or ``1``        ``0``      If set to ``1`` means the payload is :ref:`base64` encoded UTF-8,
                                           otherwise it is plain UTF-8 text with no C0 control codes in it
 
+``f``    :ref:`base64`         ``unset``  The name of the application sending the notification. Can be used to filter out notifications.
+         encoded UTF-8
+         application name
+
 ``i``    ``[a-zA-Z0-9-_+.]``   ``0``      Identifier for the notification. Make these globally unqiue,
-                                          like an UUID, so that termial multiplxers can
+                                          like an UUID, so that terminal multiplexers can
                                           direct responses to the correct window.
-
-``p``    One of ``title``,     ``title``  Whether the payload is the notification title or body or query. If a
-         ``body``,                        notification has no title, the body will be used as title. Terminal
-         ``close``,                       emulators should ignore payloads of unknown type to allow for future
-         ``?``, ``alive``                 expansion of this protocol.
-
 
 ``o``    One of ``always``,    ``always`` When to honor the notification request. ``unfocused`` means when the window
          ``unfocused`` or                 the notification is sent on does not have keyboard focus. ``invisible``
@@ -280,18 +291,18 @@ Key      Value                 Default    Description
                                           its OS window is not currently active.
                                           ``always`` is the default and always honors the request.
 
+``p``    One of ``title``,     ``title``  Whether the payload is the notification title or body or query. If a
+         ``body``,                        notification has no title, the body will be used as title. Terminal
+         ``close``,                       emulators should ignore payloads of unknown type to allow for future
+         ``?``, ``alive``                 expansion of this protocol.
+
+``t``    :ref:`base64`         ``unset``  The type of the notification. Can be used to filter out notifications.
+         encoded UTF-8
+         notification type
+
 ``u``    ``0, 1 or 2``         ``unset``  The *urgency* of the notification. ``0`` is low, ``1`` is normal and ``2`` is critical.
                                           If not specified normal is used.
 
-``c``    ``0`` or ``1``        ``0``      When non-zero an escape code is sent to the application when the notification is closed.
-
-``f``    :rfc:`base64 <4648>`  ``unset``  The name of the application sending the notification. Can be used to filter out notifications.
-         encoded UTF-8
-         application name
-
-``t``    :rfc:`base64 <4648>`  ``unset``  The type of the notification. Can be used to filter out notifications.
-         encoded UTF-8
-         notification type
 
 ``w``    ``>=-1``              ``-1``     The number of milliseconds to auto-close the notification after.
 =======  ====================  ========== =================
@@ -308,3 +319,31 @@ Key      Value                 Default    Description
    |kitty| also supports the `legacy OSC 9 protocol developed by iTerm2
    <https://iterm2.com/documentation-escape-codes.html>`__ for desktop
    notifications.
+
+
+.. _base64:
+
+Base64
+---------------
+
+The base64 encoding used in the this specification is the one defined in
+:rfc:`4648`. When a base64 payload is chunked, either the chunking should be
+done before encoding or after. When the chunking is done before encoding, no
+more than 2048 bytes of data should be encoded per chunk and the encoded data
+**must** include the base64 padding bytes, if any. When the chunking is done
+after encoding, each encoded chunk must be no more than 4096 bytes in size.
+There may or may not be padding bytes at the end of the last chunk, terminals
+must handle either case.
+
+
+.. _safe_utf8:
+
+Escape code safe UTF-8
+--------------------------
+
+This must be valid UTF-8 as per the spec in :rfc:`3629`. In addition, in order
+to make it safe for transmission embedded inside an escape code, it must
+contain none of the C0 and C1 control characters, that is, the unicode
+characters: U+0000 (NUL) - U+1F (Unit separator), U+7F (DEL) and U+80 (PAD) - U+9F
+(APC). Note that in particular, this means that no newlines, carriage returns,
+tabs, etc. are allowed.

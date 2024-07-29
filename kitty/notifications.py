@@ -11,7 +11,7 @@ from itertools import count
 from typing import Any, Callable, Dict, FrozenSet, Iterator, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 from weakref import ReferenceType, ref
 
-from .constants import cache_dir, config_dir, is_macos, logo_png_file
+from .constants import cache_dir, config_dir, is_macos, logo_png_file, standard_icon_names
 from .fast_data_types import ESC_OSC, StreamingBase64Decoder, add_timer, base64_decode, current_focused_os_window_id, get_boss, get_options
 from .types import run_once
 from .typing import WindowType
@@ -25,7 +25,8 @@ class IconDataCache:
 
     def __init__(self, base_cache_dir: str = '', max_cache_size: int = 128 * 1024 * 1024):
         self.max_cache_size = max_cache_size
-        self.key_map: 'OrderedDict[str, str]' = OrderedDict()
+        self.key_map: Dict[str, str] = {}
+        self.hash_map: 'OrderedDict[str, Set[str]]' = OrderedDict()
         self.base_cache_dir = base_cache_dir
         self.cache_dir = ''
         self.total_size = 0
@@ -61,31 +62,36 @@ class IconDataCache:
             with open(path, 'wb') as f:
                 f.write(data)
             self.total_size += len(data)
-        self.key_map.pop(key, None)  # mark this key as being used recently
-        self.key_map[key] = data_hash
+            self.hash_map[data_hash] = self.hash_map.pop(data_hash, set()) | {key} # mark this data as being used recently
+        if key:
+            self.key_map[key] = data_hash
         self.prune()
         return path
 
     def get_icon(self, key: str) -> str:
         self._ensure_state()
-        data_hash = self.key_map.pop(key, None)
+        data_hash = self.key_map.get(key)
         if data_hash:
-            self.key_map[key] = data_hash  # mark this key as being used recently
+            self.hash_map[data_hash] = self.hash_map.pop(data_hash, set()) | {key} # mark this data as being used recently
             return os.path.join(self.cache_dir, data_hash)
         return ''
 
     def clear(self) -> None:
-        while self.key_map:
-            key, data_hash = self.key_map.popitem(False)
-            self._remove_data_hash(data_hash)
+        while self.hash_map:
+            data_hash, keys = self.hash_map.popitem(False)
+            for key in keys:
+                self.key_map.pop(key, None)
+            self._remove_data_file(data_hash)
 
     def prune(self) -> None:
         self._ensure_state()
-        while self.total_size > self.max_cache_size and self.key_map:
-            key, data_hash = self.key_map.popitem(False)
-            self._remove_data_hash(data_hash)
+        while self.total_size > self.max_cache_size and self.hash_map:
+            data_hash, keys = self.hash_map.popitem(False)
+            for key in keys:
+                self.key_map.pop(key, None)
+            self._remove_data_file(data_hash)
 
-    def _remove_data_hash(self, data_hash: str) -> None:
+    def _remove_data_file(self, data_hash: str) -> None:
         path = os.path.join(self.cache_dir, data_hash)
         with suppress(FileNotFoundError):
             sz = os.path.getsize(path)
@@ -96,7 +102,9 @@ class IconDataCache:
         self._ensure_state()
         data_hash = self.key_map.pop(key, None)
         if data_hash:
-            self._remove_data_hash(data_hash)
+            for key in self.hash_map.pop(data_hash, set()):
+                self.key_map.pop(key, None)
+            self._remove_data_file(data_hash)
 
 
 class Urgency(Enum):
@@ -154,7 +162,7 @@ class DataStore:
 class EncodedDataStore:
 
     def __init__(self, data_store: DataStore) -> None:
-        self.decoder = StreamingBase64Decoder(initial_capacity=4096)
+        self.decoder = StreamingBase64Decoder()
         self.data_store = data_store
 
     @property
@@ -170,14 +178,10 @@ class EncodedDataStore:
     def add_base64_data(self, data: Union[str, bytes]) -> None:
         if isinstance(data, str):
             data = data.encode('ascii')
-        self.decoder.add(data)
-        if len(self.decoder) >= self.data_store.max_size:
-            self.data_store(self.decoder.take_output())
+        self.data_store(self.decoder.decode(data))
 
     def flush_encoded_data(self) -> None:
-        self.decoder.flush()
-        if len(self.decoder):
-            self.data_store(self.decoder.take_output())
+        self.decoder.reset()
 
     def finalise(self) -> bytes:
         self.flush_encoded_data()
@@ -199,9 +203,9 @@ class NotificationCommand:
     only_when: OnlyWhen = OnlyWhen.unset
     urgency: Optional[Urgency] = None
     icon_data_key: str = ''
-    icon_name: str = ''
+    icon_names: Tuple[str, ...] = ()
     application_name: str = ''
-    notification_type: str = ''
+    notification_types: tuple[str, ...] = ()
     timeout: int = -2
 
     # event callbacks
@@ -288,15 +292,18 @@ class NotificationCommand:
                 elif k == 'g':
                     self.icon_data_key = sanitize_id(v)
                 elif k == 'n':
-                    self.icon_name = v
+                    try:
+                        self.icon_names += (base64_decode(v).decode('utf-8'),)
+                    except Exception:
+                        self.log('Ignoring invalid icon name in notification: {v!r}')
                 elif k == 'f':
                     try:
-                        self.application_name = base64_decode(v).decode('utf-8', 'replace')
+                        self.application_name = base64_decode(v).decode('utf-8')
                     except Exception:
                         self.log('Ignoring invalid application_name in notification: {v!r}')
                 elif k == 't':
                     try:
-                        self.notification_type = base64_decode(v).decode('utf-8', 'replace')
+                        self.notification_types += (base64_decode(v).decode('utf-8'),)
                     except Exception:
                         self.log('Ignoring invalid notification type in notification: {v!r}')
                 elif k == 'w':
@@ -320,12 +327,12 @@ class NotificationCommand:
             self.close_response_requested = prev.close_response_requested
         if not self.icon_data_key:
             self.icon_data_key = prev.icon_data_key
-        if not self.icon_name:
-            self.icon_name = prev.icon_name
+        if prev.icon_names:
+            self.icon_names = prev.icon_names + self.icon_names
         if not self.application_name:
             self.application_name = prev.application_name
-        if not self.notification_type:
-            self.notification_type = prev.notification_type
+        if prev.notification_types:
+            self.notification_types = prev.notification_types + self.notification_types
         if self.timeout < -1:
             self.timeout = prev.timeout
         self.icon_path = prev.icon_path
@@ -366,12 +373,9 @@ class NotificationCommand:
             if truncated:
                 self.log('Ignoring too long notification icon data')
             else:
-                if self.icon_data_key:
-                    icd = self.icon_data_cache_ref()
-                    if icd:
-                        self.icon_path = icd.add_icon(self.icon_data_key, data)
-                else:
-                    self.log('Ignoring notification icon data because no icon data key specified')
+                icd = self.icon_data_cache_ref()
+                if icd:
+                    self.icon_path = icd.add_icon(self.icon_data_key, data)
 
     def finalise(self) -> None:
         if self.current_payload_buffer:
@@ -394,7 +398,11 @@ class NotificationCommand:
     def matches_rule_item(self, location:str, query:str) -> bool:
         import re
         pat = re.compile(query)
-        val = {'title': self.title, 'body': self.body, 'app': self.application_name, 'type': self.notification_type}[location]
+        if location == 'type':
+            for x in self.notification_types:
+                if pat.search(x) is not None:
+                    return True
+        val = {'title': self.title, 'body': self.body, 'app': self.application_name}[location]
         return pat.search(val) is not None
 
     def matches_rule(self, rule: str) -> bool:
@@ -569,7 +577,23 @@ class FreeDesktopIntegration(DesktopIntegration):
 
     def notify(self, nc: NotificationCommand, existing_desktop_notification_id: Optional[int]) -> int:
         from .fast_data_types import dbus_send_notification
-        app_icon = nc.icon_name or nc.icon_path or get_custom_window_icon()[1] or logo_png_file
+        from .xdg import icon_exists, icon_for_appname
+        app_icon = ''
+        if nc.icon_names:
+            for name in nc.icon_names:
+                if sn := standard_icon_names.get(name):
+                    app_icon = sn
+                    break
+                if icon_exists(name):
+                    app_icon = name
+                    break
+            if not app_icon:
+                app_icon = nc.icon_path or nc.icon_names[0]
+        else:
+            app_icon = nc.icon_path or icon_for_appname(nc.application_name)
+        if not app_icon:
+            app_icon = get_custom_window_icon()[1] or logo_png_file
+
         body = nc.body.replace('<', '<\u200c').replace('&', '&\u200c')  # prevent HTML markup from being recognized
         assert nc.urgency is not None
         replaces_dbus_id = 0
@@ -647,7 +671,8 @@ class NotificationManager:
         channel: Channel = Channel(),
         log: Log = Log(),
         debug: bool = False,
-        base_cache_dir: str = ''
+        base_cache_dir: str = '',
+        cleanup_at_exit: bool = True,
     ):
         global debug_desktop_integration
         debug_desktop_integration = debug
@@ -669,6 +694,9 @@ class NotificationManager:
             except Exception as e:
                 self.log(f'Failed to load {script_path} with error: {e}')
         self.reset()
+        if cleanup_at_exit:
+            import atexit
+            atexit.register(self.cleanup)
 
     def reset(self) -> None:
         self.icon_data_cache.clear()
@@ -868,3 +896,6 @@ class NotificationManager:
             parts = raw.split(';', 1)
             n.title, n.body = parts[0], (parts[1] if len(parts) > 1 else '')
             self.notify_with_command(n, channel_id)
+
+    def cleanup(self) -> None:
+        del self.icon_data_cache

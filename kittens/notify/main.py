@@ -16,13 +16,13 @@ The urgency of the notification.
 
 
 --expire-time -t
-default=-1
-type=int
-The duration, in milliseconds, for the notification to appear on screen. The default is to
-use the policy of the OS notification service. A value of 0 means the notification should
+The duration, for the notification to appear on screen. The default is to
+use the policy of the OS notification service. A value of :code:`never` means the notification should
 never expire, however, this may or may not work depending on the policies of the OS notification
-service. Positive values guarantee the notification will be closed automatically
-after that many milliseconds have elapsed. The notification could be closed before by user
+service. Time is specified in the form NUMBER[SUFFIX] where SUFFIX can be :code:`s` for seconds, :code:`m` for minutes,
+:code:`h` for hours or :code:`d` for days. Non-integer numbers are allowed.
+If not specified, seconds is assumed. The notification is guaranteed to be closed automatically
+after the specified time has elapsed. The notification could be closed before by user
 action or OS policy.
 
 
@@ -37,6 +37,7 @@ is already displayed, it is replaced/updated.
 
 
 --print-identifier -p
+type=bool-set
 Print the identifier for the notification to STDOUT. Useful when not specifying
 your own identifier via the --identifier option.
 
@@ -45,6 +46,13 @@ your own identifier via the --identifier option.
 type=bool-set
 Wait until the notification is closed. If the user activates the notification,
 "activated" is printed to STDOUT before quitting.
+
+
+--only-print-escape-code
+type=bool-set
+Only print the escape code to STDOUT. Useful if using this kitten as part
+of a larger application. If this is specified, the --wait-till-closed option
+will be used for escape code generation, but no actual waiting will be done.
 '''.format
 help_text = '''\
 Send notifications to the user that are displayed to them via the

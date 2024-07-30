@@ -566,10 +566,12 @@ def cocoa_send_notification(
     identifier: str,
     title: str,
     body: str,
+    image_path: str = "",
     urgency: int = 1,
 ) -> None:
     pass
 
+def cocoa_bundle_image_as_png(path_or_identifier: str, output_path: str = '', image_size: int = 256, is_identifier: bool = False) -> bytes: ...
 def cocoa_remove_delivered_notification(identifier: str) -> bool: ...
 def cocoa_live_delivered_notifications() -> bool: ...
 

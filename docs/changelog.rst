@@ -80,7 +80,7 @@ Detailed list of changes
 
 - A new option :opt:`second_transparent_bg` to make a second background color semi-transparent via :opt:`background_opacity`. Useful for things like cursor line highlight in editors (:iss:`7646`)
 
-- Desktop notifications protocol: Add support for closing notifications and querying if the terminal emulator supports the protocol (:iss:`7658`, :iss:`7659`)
+- Desktop notifications protocol: Add support for icons, closing of notifications, expiry of notifications, updating of notifications and querying if the terminal emulator supports the protocol (:iss:`7657`, :iss:`7658`, :iss:`7659`)
 
 - A new option :opt:`filter_notification` to filter out or perform arbitrary actions on desktop notifications based on sophisticated criteria (:iss:`7670`)
 
@@ -113,6 +113,8 @@ Detailed list of changes
 - Add support for in-band window resize notifications (:iss:`7642`)
 
 - Allow controlling the easing curves used for :opt:`visual_bell_duration`
+
+- New special rendering for font symbols useful in drawing commit graphs (:pull:`7681`)
 
 
 0.35.2 [2024-06-22]

@@ -4,11 +4,12 @@
 import os
 import re
 from collections import OrderedDict
+from collections.abc import Iterator, Sequence
 from contextlib import suppress
 from enum import Enum
 from functools import partial
 from itertools import count
-from typing import Any, Callable, Dict, FrozenSet, Iterator, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, NamedTuple, Optional, Set, Union
 from weakref import ReferenceType, ref
 
 from .constants import cache_dir, config_dir, is_macos, logo_png_file, standard_icon_names
@@ -34,7 +35,7 @@ class IconDataCache:
 
     def __init__(self, base_cache_dir: str = '', max_cache_size: int = 128 * 1024 * 1024):
         self.max_cache_size = max_cache_size
-        self.key_map: Dict[str, str] = {}
+        self.key_map: dict[str, str] = {}
         self.hash_map: 'OrderedDict[str, Set[str]]' = OrderedDict()
         self.base_cache_dir = base_cache_dir
         self.cache_dir = ''
@@ -151,7 +152,7 @@ class Action(Enum):
 class DataStore:
 
     def __init__(self, max_size: int = 4 * 1024 * 1024) -> None:
-        self.buf: List[bytes] = []
+        self.buf: list[bytes] = []
         self.current_size = 0
         self.max_size = max_size
         self.truncated = 0
@@ -208,11 +209,11 @@ class NotificationCommand:
     # data received from client and eventually displayed/processed
     title: str = ''
     body: str = ''
-    actions: FrozenSet[Action] = frozenset((Action.focus,))
+    actions: frozenset[Action] = frozenset((Action.focus,))
     only_when: OnlyWhen = OnlyWhen.unset
     urgency: Optional[Urgency] = None
     icon_data_key: str = ''
-    icon_names: Tuple[str, ...] = ()
+    icon_names: tuple[str, ...] = ()
     application_name: str = ''
     notification_types: tuple[str, ...] = ()
     timeout: int = -2
@@ -258,7 +259,7 @@ class NotificationCommand:
                 fields[x] = val
         return f'NotificationCommand{fields}'
 
-    def parse_metadata(self, metadata: str, prev: 'NotificationCommand') -> Tuple[PayloadType, bool]:
+    def parse_metadata(self, metadata: str, prev: 'NotificationCommand') -> tuple[PayloadType, bool]:
         payload_type = PayloadType.title
         payload_is_encoded = False
         if metadata:
@@ -418,7 +419,7 @@ class NotificationCommand:
         if rule == 'all':
             return True
         from .search_query_parser import search
-        def get_matches(location: str, query: str, candidates: Set['NotificationCommand']) -> Set['NotificationCommand']:
+        def get_matches(location: str, query: str, candidates: set['NotificationCommand']) -> set['NotificationCommand']:
             return {x for x in candidates if x.matches_rule_item(location, query)}
         try:
             return self in search(rule, ('title', 'body', 'app', 'type'), {self}, get_matches)
@@ -468,7 +469,7 @@ class MacOSIntegration(DesktopIntegration):
     def initialize(self) -> None:
         from .fast_data_types import cocoa_set_notification_activated_callback
         self.id_counter = count(start=1)
-        self.live_notification_queries: List[Tuple[int, str]] = []
+        self.live_notification_queries: list[tuple[int, str]] = []
         self.failed_icons: OrderedDict[str, bool] = OrderedDict()
         self.icd_key_prefix = os.urandom(16).hex()
         cocoa_set_notification_activated_callback(self.notification_activated)
@@ -488,16 +489,20 @@ class MacOSIntegration(DesktopIntegration):
         return close_succeeded
 
     def get_icon_for_name(self, name: str) -> str:
+        from .fast_data_types import cocoa_bundle_image_as_png
         if name in self.failed_icons:
             return ''
+        image_type, image_name = 1, name
+        if sic := standard_icon_names.get(name):
+            image_name = sic[1]
+            image_type = 2
         icd = self.notification_manager.icon_data_cache
         icd_key = self.icd_key_prefix + name
         ans = icd.get_icon(icd_key)
         if ans:
             return ans
-        from .fast_data_types import cocoa_bundle_image_as_png
         try:
-            data = cocoa_bundle_image_as_png(name, is_identifier=True)
+            data = cocoa_bundle_image_as_png(image_name, image_type=image_type)
         except Exception as err:
             if debug_desktop_integration:
                 self.notification_manager.log(f'Failed to get icon for {name} with error: {err}')
@@ -567,7 +572,7 @@ class FreeDesktopIntegration(DesktopIntegration):
         # map the id returned by the notification daemon to the
         # desktop_notification_id we use for the notification
         self.dbus_to_desktop: 'OrderedDict[int, int]' = OrderedDict()
-        self.desktop_to_dbus: Dict[int, int] = {}
+        self.desktop_to_dbus: dict[int, int] = {}
 
     def query_live_notifications(self, channel_id: int, identifier: str) -> None:
         self.notification_manager.send_live_response(channel_id, identifier, tuple(self.desktop_to_dbus))
@@ -624,7 +629,7 @@ class FreeDesktopIntegration(DesktopIntegration):
         if nc.icon_names:
             for name in nc.icon_names:
                 if sn := standard_icon_names.get(name):
-                    app_icon = sn
+                    app_icon = sn[0]
                     break
                 if icon_exists(name):
                     app_icon = name
@@ -743,8 +748,8 @@ class NotificationManager:
     def reset(self) -> None:
         self.icon_data_cache.clear()
         self.in_progress_notification_commands: 'OrderedDict[int, NotificationCommand]' = OrderedDict()
-        self.in_progress_notification_commands_by_client_id: Dict[str, NotificationCommand] = {}
-        self.pending_commands: Dict[int, NotificationCommand] = {}
+        self.in_progress_notification_commands_by_client_id: dict[str, NotificationCommand] = {}
+        self.pending_commands: dict[int, NotificationCommand] = {}
 
     def notification_created(self, desktop_notification_id: int) -> None:
         if n := self.in_progress_notification_commands.get(desktop_notification_id):

@@ -106,9 +106,10 @@ escape code is::
 
 The value of ``identifier`` comes from the ``i`` key in the escape code sent by
 the application. If the application sends no identifier, then the terminal
-*must* use ``i=0``. Actions can be preceded by a negative sign to turn them
-off, so for example if you do not want any action, turn off the default
-``focus`` action with::
+*must* use ``i=0``. (Ideally ``i`` should have been left out from the response,
+but for backwards compatibility ``i=0`` is used). Actions can be preceded by a
+negative sign to turn them off, so for example if you do not want any action,
+turn off the default ``focus`` action with::
 
     a=-focus
 
@@ -136,7 +137,8 @@ escape code to inform when the notification is closed::
 
     <OSC> 99 ; i=mynotification : p=close ; <terminator>
 
-If no notification id was specified ``i=0`` will be used.
+If no notification id was specified ``i=0`` will be used in the response
+
 If ``a=report`` is specified and the notification is activated/clicked on
 then both the activation report and close notification are sent. If the notification
 is updated then the close event is not sent unless the updated notification
@@ -171,9 +173,12 @@ To update a previous notification simply send a new notification with the same
 *notification id* (``i`` key) as the one you want to update. If the original
 notification is still displayed it will be replaced, otherwise a new
 notification is displayed. This can be used, for example, to show progress of
-an operation. Note that how smoothly the existing notification is replaced
+an operation. How smoothly the existing notification is replaced
 depends on the underlying OS, for example, on Linux the replacement is usually flicker
 free, on macOS it isn't, because of Apple's design choices.
+Note that if no ``i`` key is specified, no updating must take place, even if
+there is a previous notification without an identifier. The terminal must
+treat these as being two unique *unidentified* notifications.
 
 To close a previous notification, send::
 
@@ -181,7 +186,7 @@ To close a previous notification, send::
 
 This will close a previous notification with the specified id. If no such
 notification exists (perhaps because it was already closed or it was activated)
-then the request is ignored.
+then the request is ignored. If no ``i`` key is specified, this must be a no-op.
 
 
 Automatically expiring notifications
@@ -372,7 +377,7 @@ Key      Value                 Default    Description
 ``g``    :ref:`identifier`     ``unset``  Identifier for icon data. Make these globally unqiue,
                                           like an UUID.
 
-``i``    :ref:`identifier`     ``0``      Identifier for the notification. Make these globally unqiue,
+``i``    :ref:`identifier`     ``unset``  Identifier for the notification. Make these globally unqiue,
                                           like an UUID, so that terminal multiplexers can
                                           direct responses to the correct window.
 
@@ -390,7 +395,8 @@ Key      Value                 Default    Description
 ``p``    One of ``title``,     ``title``  Whether the payload is the notification title or body or query. If a
          ``body``,                        notification has no title, the body will be used as title. Terminal
          ``close``,                       emulators should ignore payloads of unknown type to allow for future
-         ``?``, ``alive``                 expansion of this protocol.
+         ``icon``,                        expansion of this protocol.
+         ``?``, ``alive``
 
 ``t``    :ref:`base64`         ``unset``  The type of the notification. Used to filter out notifications. Can be specified multiple times.
          encoded UTF-8
@@ -452,4 +458,5 @@ Identifier
 
 Any string consisting solely of characters from the set ``[a-zA-Z0-9_-+.]``,
 that is, the letters ``a-z``, ``A-Z``, the underscore, the hyphen, the plus
-sign and the period.
+sign and the period. Applications should make these globally unique, like a
+UUID for maximum robustness.

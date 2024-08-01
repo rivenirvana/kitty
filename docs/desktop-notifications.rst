@@ -35,6 +35,15 @@ To show a message with a title and a body::
     printf '\x1b]99;i=1:d=0;Hello world\x1b\\'
     printf '\x1b]99;i=1:p=body;This is cool\x1b\\'
 
+.. tip::
+
+   |kitty| also comes with its own :doc:`statically compiled command line tool </kittens/notify>` to easily display
+   notifications, with all their advanced features. For example:
+
+   .. code-block:: sh
+
+        kitten notify "Hello world" A good day to you
+
 The most important key in the metadata is the ``p`` key, it controls how the
 payload is interpreted. A value of ``title`` means the payload is setting the
 title for the notification. A value of ``body`` means it is setting the body,
@@ -84,7 +93,7 @@ for examples of notification types.
    application. While not strictly necessary, this allows the terminal
    emulator to deduce an icon for the notification when one is not specified.
 
-.. note::
+.. tip::
 
    |kitty| has sophisticated notification filtering and management
    capabilities via :opt:`filter_notification`.
@@ -290,6 +299,38 @@ need to transmit icon data only once until they are quit.
    On macOS, both the terminal emulator's icon and the specified custom icon
    are displayed.
 
+
+Adding buttons to the notification
+---------------------------------------
+
+Buttons can be added to the notification using the *buttons* payload, with ``p=buttons``.
+Buttons are a list of UTF-8 text separated by the Unicode Line Separator
+character (U+2028) which is the UTF-8 bytes ``0xe2 0x80 0xa8``. They can be
+sent either as :ref:`safe_utf8` or :ref:`base64`. When the user clicks on one
+of the buttons, and reporting is enabled with ``a=report``, the terminal will
+send an escape code of the form::
+
+    <OSC> 99 ; i=identifier ; button_number <terminator>
+
+Here, `button_number` is a number from 1 onwards, where 1 corresponds
+to the first button, two to the second and so on. If the user activates the
+notification as a whole, and not a specific button, the response, as described
+above is::
+
+    <OSC> 99 ; i=identifier ; <terminator>
+
+If no identifier was specified when creating the notification, ``i=0`` is used.
+The terminal *must not* send a response unless report is requested with
+``a=report``.
+
+.. note::
+
+   The appearance of the buttons depends on the underlying OS implementation.
+   On most Linux systems, the buttons appear as individual buttons on the
+   notification. On macOS they appear as a drop down menu that is accessible
+   when hovering the notification. Generally, using more than two or three
+   buttons is not a good idea.
+
 .. _notifications_query:
 
 Querying for support
@@ -329,7 +370,7 @@ Key      Value
 
 ``p``    Comma spearated list of supported payload types (i.e. values of the
          ``p`` key that the terminal implements). These must contain at least
-         ``title`` and ``body``.
+         ``title``.
 
 ``u``    Comma separated list of urgency values that the terminal implements.
          If urgency is not supported, the ``u`` key must be absent from the
@@ -379,7 +420,8 @@ Key      Value                 Default    Description
 
 ``i``    :ref:`identifier`     ``unset``  Identifier for the notification. Make these globally unqiue,
                                           like an UUID, so that terminal multiplexers can
-                                          direct responses to the correct window.
+                                          direct responses to the correct window. Note that for backwards
+                                          compatibility reasons i=0 is special and should not be used.
 
 ``n``    :ref:`base64`         ``unset``  Icon name. Can be specified multiple times.
          encoded UTF-8
@@ -392,11 +434,12 @@ Key      Value                 Default    Description
                                           its OS window is not currently active.
                                           ``always`` is the default and always honors the request.
 
-``p``    One of ``title``,     ``title``  Whether the payload is the notification title or body or query. If a
-         ``body``,                        notification has no title, the body will be used as title. Terminal
+``p``    One of ``title``,     ``title``  Type of the payload. If a notification has no title, the body will be used as title.
+         ``body``,                        A notification with not title and no body is ignored. Terminal
          ``close``,                       emulators should ignore payloads of unknown type to allow for future
          ``icon``,                        expansion of this protocol.
-         ``?``, ``alive``
+         ``?``, ``alive``,
+         ``buttons``
 
 ``t``    :ref:`base64`         ``unset``  The type of the notification. Used to filter out notifications. Can be specified multiple times.
          encoded UTF-8

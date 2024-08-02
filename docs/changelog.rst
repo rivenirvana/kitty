@@ -29,7 +29,7 @@ Desktop notifications [0.36]
 
 |kitty| now has a :doc:`notify </kittens/notify>` kitten that can be used to
 display desktop notifications from the command line, even over SSH. It has
-support for icons, buttons, waiting, updating notifications, waiting till
+support for icons, buttons, updating notifications, waiting till
 the notification is closed, etc. The underlying :doc:`desktop-notifications`
 protocol has been expanded to support all these features.
 
@@ -129,6 +129,8 @@ Detailed list of changes
 - New special rendering for font symbols useful in drawing commit graphs (:pull:`7681`)
 
 - diff kitten: Add bindings to jump to next and previous file (:pull:`7683`)
+
+- Wayland GNOME: Fix the font size in the OS Window title bar changing with the size of the text in the window (:disc:`7677`)
 
 
 0.35.2 [2024-06-22]

@@ -62,7 +62,7 @@ allowing arbitrarily long text (terminal emulators are free to impose a sensible
 limit to avoid Denial-of-Service attacks). The size of the payload must be no
 longer than ``2048`` bytes, *before being encoded* or ``4096`` encoded bytes.
 
-Both the ``title`` and ``body`` payloads must be either :ref:`safe_utf8` text ,
+Both the ``title`` and ``body`` payloads must be either :ref:`safe_utf8` text
 or UTF-8 text that is :ref:`base64` encoded, in which case there must be an
 ``e=1`` key in the metadata to indicate the payload is :ref:`base64`
 encoded. No HTML or other markup in the plain text is allowed. It is strictly
@@ -333,6 +333,25 @@ The terminal *must not* send a response unless report is requested with
 
 .. _notifications_query:
 
+Playing a sound with notifications
+-----------------------------------------
+
+.. versionadded:: 0.36.0
+   The ability to control the sound played with notifications
+
+By default, notifications may or may not have a sound associated with them
+depending on the policies of the OS notifications service. Sometimes it
+might be useful to ensure a notification is not accompanied by a sound.
+This can be done by using the ``s`` key which accepts :ref:`base64` encoded
+UTF-8 text as its value. Using a value of ``silent`` means the notification
+will not be accompanied with a sound. A value of ``system`` (the default)
+means that the OS notifications default policies are followed. Any other name
+is implementation dependent. For example, on Linux, one can use the `standard
+sound names
+<https://specifications.freedesktop.org/sound-naming-spec/latest/#names>`__.
+Support for sounds can be queried as described below.
+
+
 Querying for support
 -------------------------
 
@@ -371,6 +390,12 @@ Key      Value
 ``p``    Comma spearated list of supported payload types (i.e. values of the
          ``p`` key that the terminal implements). These must contain at least
          ``title``.
+
+``s``    Comma separated list of keywords ``silent`` and ``xdg-names`` indicating
+         support for silent notifications and for passing of `Freedesktop
+         standard sound names
+         <https://specifications.freedesktop.org/sound-naming-spec/latest/#names>`__ to the
+         desktop notification service for custom sounds.
 
 ``u``    Comma separated list of urgency values that the terminal implements.
          If urgency is not supported, the ``u`` key must be absent from the
@@ -441,6 +466,10 @@ Key      Value                 Default    Description
          ``?``, ``alive``,
          ``buttons``
 
+``s``    :ref:`base64`         ``system`` The sound name to play with the notification. ``silent`` means no sound.
+         encoded sound                    ``system`` means to play the default sound, if any, of the platform notification service.
+         name                             Other names are implementation dependent.
+
 ``t``    :ref:`base64`         ``unset``  The type of the notification. Used to filter out notifications. Can be specified multiple times.
          encoded UTF-8
          notification type
@@ -503,3 +532,10 @@ Any string consisting solely of characters from the set ``[a-zA-Z0-9_-+.]``,
 that is, the letters ``a-z``, ``A-Z``, the underscore, the hyphen, the plus
 sign and the period. Applications should make these globally unique, like a
 UUID for maximum robustness.
+
+
+.. important::
+   Terminals **must** sanitize ids received from client programs before sending
+   them back in responses, to mitigate input injection based attacks. That is, they must
+   either reject ids containing characters not from the above set, or remove
+   bad characters when reading ids sent to them.

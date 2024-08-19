@@ -98,6 +98,9 @@ get_release_url() {
     get_file_url "v$release_version" "$release_version"
 }
 
+get_version_url() {
+    get_file_url "v$1" "$1"
+}
 
 get_nightly_url() {
     get_file_url "nightly" "nightly"
@@ -108,6 +111,7 @@ get_download_url() {
     case "$installer" in
         "nightly") get_nightly_url ;;
         "") get_release_url ;;
+        version-*) get_version_url "${installer#*-}";;
         *) installer_is_file="y" ;;
     esac
 }
@@ -126,20 +130,24 @@ download_installer() {
     }
 }
 
+ensure_dest() {
+    printf "%s\n" "Installing to $dest"
+    command rm -rf "$dest" || die "Failed to delete $dest"
+    command mkdir -p "$dest" || die "Failed to mkdir -p $dest"
+    command rm -rf "$dest" || die "Failed to delete $dest"
+}
+
 linux_install() {
     command mkdir "$tdir/mp"
     command tar -C "$tdir/mp" "-xJof" "$installer" || die "Failed to extract kitty tarball"
-    printf "%s\n" "Installing to $dest"
-    command rm -rf "$dest" || die "Failed to delete $dest"
+    ensure_dest
     command mv "$tdir/mp" "$dest" || die "Failed to move kitty.app to $dest"
 }
 
 macos_install() {
     command mkdir "$tdir/mp"
     command hdiutil attach "$installer" "-mountpoint" "$tdir/mp" || die "Failed to mount kitty.dmg"
-    printf "%s\n" "Installing to $dest"
-    command rm -rf "$dest"
-    command mkdir -p "$dest" || die "Failed to create the directory: $dest"
+    ensure_dest
     command ditto -v "$tdir/mp/kitty.app" "$dest"
     rc="$?"
     command hdiutil detach "$tdir/mp"

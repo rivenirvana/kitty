@@ -74,7 +74,14 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.36.0 [future]
+0.36.1 [future]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Allow specifying that the :opt:`cursor shape for unfocused windows <cursor_shape_unfocused>` should remain unchanged (:pull:`7728`)
+
+- MacOS Intel: Fix a crash in the choose-fonts kitten when displaying previews of variable fonts (:iss:`7734`)
+
+0.36.0 [2024-08-17]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Support `OpenType Variable fonts <https://en.wikipedia.org/wiki/Variable_font>`__ (:iss:`3711`)

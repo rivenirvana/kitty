@@ -17,11 +17,12 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # GPL-3.0-only: kitty
 # Zlib: glfw
 # LGPL-2.1-or-later: kitty/iqsort.h
-# BSD-1-Clause: 3rdparty/uthash.h
 # MIT: docs/_static/custom.css, shell-integration/ssh/bootstrap-utils.sh
 # MIT AND CC0-1.0: simde
 # CC0-1.0: 3rdparty/ringbuf
 # BSD-2-Clause: 3rdparty/base64
+# MIT: NerdFontsSymbolsOnly
+# MIT: 3rdparty/verstable.h
 # Go dependencies:
 # github.com/alecthomas/chroma: MIT
 # github.com/ALTree/bigfloat: MIT
@@ -47,7 +48,7 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # golang.org/x/sys: BSD-3-Clause
 # howett.net/plist: BSD-2-Clause AND BSD-3-Clause
 # github.com/rwcarlsen/goexif: BSD-2-Clause
-License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND BSD-1-Clause AND (MIT AND CC0-1.0) AND BSD-2-Clause AND CC0-1.0
+License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND (MIT AND CC0-1.0) AND BSD-2-Clause AND CC0-1.0 AND MIT
 URL:            https://sw.kovidgoyal.net/kitty
 Source0:        {{{git_repo_pack}}}
 # git clone https://github.com/kovidgoyal/kitty.git
@@ -59,6 +60,7 @@ Source0:        {{{git_repo_pack}}}
 # Add AppData manifest file
 # * https://github.com/kovidgoyal/kitty/pull/2088
 Source1:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444e4f4994008f0d2dcb41e49389f4/kitty/data/%{name}.appdata.xml
+
 Source2:        https://github.com/ryanoasis/nerd-fonts/releases/latest/download/NerdFontsSymbolsOnly.tar.xz
 
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
@@ -127,7 +129,10 @@ Recommends:     ripgrep
 # "kittens" functions install separately
 Suggests:       ImageMagick%{?_isa}
 
-Provides:       bundled(uthash) = 2.3.0^1.gitca98384
+Provides:       bundled(font(SymbolsNerdFontMono)) = 3.2.1
+Provides:       bundled(font(SymbolsNerdFont)) = 3.2.1
+
+Provides:       bundled(Verstable) = 2.1.1
 # modified version of https://github.com/dhess/c-ringbuf
 Provides:       bundled(c-ringbuf)
 # heavily modified
@@ -216,6 +221,8 @@ This package contains the documentation for %{name}.
 
 %prep
 {{{git_setup_macro path="$GIT_ROOT"}}}
+mkdir fonts
+tar -xf %{SOURCE2} -C fonts
 
 # Changing sphinx theme to classic
 sed "s/html_theme = 'furo'/html_theme = 'classic'/" -i docs/conf.py
@@ -226,9 +233,8 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{python3}|g'    
                                     -e 's|/usr/bin/env -S kitty|/usr/bin/kitty|g' \
                                     -i "{}" \;
 
-mkdir -p src fonts
+mkdir src
 ln -s ../ src/kitty
-tar xvf %{SOURCE2} -C fonts/
 
 %if %{without bundled}
 %generate_buildrequires
@@ -301,8 +307,6 @@ rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
 
 %check
 %if %{with test}
-sed '/def test_ssh_shell_integration/a \
-\        self.skipTest("Skipping a flaky test")' -i kitty_tests/ssh.py
 %if 0%{?epel}
 sed '/def test_ssh_leading_data/a \
 \        self.skipTest("Skipping a failing test")' -i kitty_tests/ssh.py
@@ -312,10 +316,6 @@ for test in test_transfer_receive test_transfer_send; do
 sed "/def $test/a \
 \        self.skipTest(\"Skipping a failing test\")" -i kitty_tests/file_transmission.py
 done
-%endif
-%ifarch s390x
-sed '/def test_xor_data/a \
-\        self.skipTest("Skipping a failing test")' -i kitty_tests/graphics.py
 %endif
 export %{gomodulesmode}
 %if %{without bundled}

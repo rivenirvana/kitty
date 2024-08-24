@@ -67,7 +67,7 @@ Source2:        https://github.com/ryanoasis/nerd-fonts/releases/latest/download
 ExcludeArch:    %{ix86}
 
 BuildRequires:  git
-BuildRequires:  golang >= 1.22.0
+BuildRequires:  golang >= 1.23.0
 BuildRequires:  go-rpm-macros
 
 BuildRequires:  gnupg2

@@ -152,6 +152,8 @@ mask_kitty_signals_process_wide(PyObject *self UNUSED, PyObject *a UNUSED) {
     Py_RETURN_NONE;
 }
 
+static int verify_peer_uid = false;
+
 static PyObject *
 new_childmonitor_object(PyTypeObject *type, PyObject *args, PyObject UNUSED *kwds) {
     ChildMonitor *self;
@@ -160,7 +162,7 @@ new_childmonitor_object(PyTypeObject *type, PyObject *args, PyObject UNUSED *kwd
     int ret;
 
     if (the_monitor) { PyErr_SetString(PyExc_RuntimeError, "Can have only a single ChildMonitor instance"); return NULL; }
-    if (!PyArg_ParseTuple(args, "OO|ii", &death_notify, &dump_callback, &talk_fd, &listen_fd)) return NULL;
+    if (!PyArg_ParseTuple(args, "OO|iip", &death_notify, &dump_callback, &talk_fd, &listen_fd, &verify_peer_uid)) return NULL;
     if ((ret = pthread_mutex_init(&children_lock, NULL)) != 0) {
         PyErr_Format(PyExc_RuntimeError, "Failed to create children_lock mutex: %s", strerror(ret));
         return NULL;
@@ -1656,12 +1658,41 @@ add_peer(int peer, bool is_remote_control_peer) {
 }
 
 static bool
+getpeerid(int fd, uid_t *euid, gid_t *egid) {
+#ifdef __linux__
+    struct ucred cr;
+    socklen_t sz = sizeof(cr);
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cr, &sz) != 0) return false;
+    *euid = cr.uid; *egid = cr.gid;
+#else
+    if (getpeereid(fd, euid, egid) != 0) return false;
+#endif
+    return true;
+}
+
+
+static bool
 accept_peer(int listen_fd, bool shutting_down, bool is_remote_control_peer) {
     int peer = accept(listen_fd, NULL, NULL);
     if (UNLIKELY(peer == -1)) {
         if (errno == EINTR) return true;
         if (!shutting_down) perror("accept() on talk socket failed!");
         return false;
+    }
+    if (verify_peer_uid) {
+        uid_t peer_uid; gid_t peer_gid;
+        if (!getpeerid(peer, &peer_uid, &peer_gid)) {
+            log_error("Denying access to peer because failed to get uid and gid for peer: %d with error: %s", peer, strerror(errno));
+            shutdown(peer, SHUT_RDWR);
+            safe_close(peer, __FILE__, __LINE__);
+            return true;
+        }
+        if (peer_uid != geteuid()) {
+            log_error("Denying access to peer because its uid (%d) does not match our uid (%d)", peer_uid, geteuid());
+            shutdown(peer, SHUT_RDWR);
+            safe_close(peer, __FILE__, __LINE__);
+            return true;
+        }
     }
     add_peer(peer, is_remote_control_peer);
     return true;

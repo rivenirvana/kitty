@@ -1366,6 +1366,7 @@ class ChildMonitor:
         dump_callback: Optional[Callable[[int, str, Any], None]],
         talk_fd: int = -1,
         listen_fd: int = -1,
+        verify_peer_uid: bool = False,
     ):
         pass
 
@@ -1586,10 +1587,6 @@ def install_signal_handlers(*signals: int) -> Tuple[int, int]:
 
 
 def remove_signal_handlers() -> None:
-    pass
-
-
-def getpeereid(fd: int) -> Tuple[int, int]:
     pass
 
 

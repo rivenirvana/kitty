@@ -214,7 +214,7 @@ def decode_cmdline(x: str) -> str:
     ctype, sep, val = x.partition('=')
     if ctype == 'cmdline':
         return next(shlex_split(val, True))
-    if ctype == 'cmdline_url':
+    elif ctype == 'cmdline_url':
         from urllib.parse import unquote
         return unquote(val)
     return ''

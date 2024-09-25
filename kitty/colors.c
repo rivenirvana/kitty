@@ -60,6 +60,17 @@ create_256_color_table(void) {
     return ans;
 }
 
+static void
+set_transparent_background_colors(TransparentDynamicColor *dest, PyObject *src) {
+    memset(dest, 0, sizeof(((ColorProfile*)0)->configured_transparent_colors));
+    for (Py_ssize_t i = 0; i < MIN(PyTuple_GET_SIZE(src), (Py_ssize_t)arraysz(((ColorProfile*)0)->configured_transparent_colors)); i++) {
+        PyObject *e = PyTuple_GET_ITEM(src, i);
+        dest[i].color = ((Color*)(PyTuple_GET_ITEM(e, 0)))->color.val & 0xffffff;
+        dest[i].opacity = (float)PyFloat_AsDouble(PyTuple_GET_ITEM(e, 1));
+        dest[i].is_set = true;
+    }
+}
+
 static bool
 set_configured_colors(ColorProfile *self, PyObject *opts) {
 #define n(which, attr) { \
@@ -80,9 +91,12 @@ set_configured_colors(ColorProfile *self, PyObject *opts) {
     n(default_fg, foreground); n(default_bg, background);
     n(cursor_color, cursor); n(cursor_text_color, cursor_text_color);
     n(highlight_fg, selection_foreground); n(highlight_bg, selection_background);
-    n(visual_bell_color, visual_bell_color); n(second_transparent_bg, second_transparent_bg);
+    n(visual_bell_color, visual_bell_color);
 #undef n
-    return true;
+    RAII_PyObject(src, PyObject_GetAttrString(opts, "transparent_background_colors"));
+    if (!src) { PyErr_SetString(PyExc_TypeError, "No transparent_background_colors on opts object"); return false; }
+    set_transparent_background_colors(self->configured_transparent_colors, src);
+    return PyErr_Occurred() ? false : true;
 }
 
 static bool
@@ -162,6 +176,8 @@ copy_color_profile(ColorProfile *dest, ColorProfile *src) {
     memcpy(dest->orig_color_table, src->orig_color_table, sizeof(dest->color_table));
     memcpy(&dest->configured, &src->configured, sizeof(dest->configured));
     memcpy(&dest->overridden, &src->overridden, sizeof(dest->overridden));
+    memcpy(dest->overriden_transparent_colors, src->overriden_transparent_colors, sizeof(dest->overriden_transparent_colors));
+    memcpy(dest->configured_transparent_colors, src->configured_transparent_colors, sizeof(dest->configured_transparent_colors));
     dest->dirty = true;
 }
 
@@ -193,8 +209,8 @@ patch_color_table(const char *key, PyObject *profiles, PyObject *spec, size_t wh
 
 static PyObject*
 patch_color_profiles(PyObject *module UNUSED, PyObject *args) {
-    PyObject *spec, *profiles, *v; ColorProfile *self; int change_configured;
-    if (!PyArg_ParseTuple(args, "O!O!p", &PyDict_Type, &spec, &PyTuple_Type, &profiles, &change_configured)) return NULL;
+    PyObject *spec, *transparent_background_colors, *profiles, *v; ColorProfile *self; int change_configured;
+    if (!PyArg_ParseTuple(args, "O!O!O!p", &PyDict_Type, &spec, &PyTuple_Type, &transparent_background_colors, &PyTuple_Type, &profiles, &change_configured)) return NULL;
     char key[32] = {0};
     for (size_t i = 0; i < arraysz(FG_BG_256); i++) {
         snprintf(key, sizeof(key) - 1, "color%zu", i);
@@ -226,10 +242,33 @@ patch_color_profiles(PyObject *module UNUSED, PyObject *args) {
         S(foreground, default_fg); S(background, default_bg); S(cursor, cursor_color);
         S(selection_foreground, highlight_fg); S(selection_background, highlight_bg);
         S(cursor_text_color, cursor_text_color); S(visual_bell_color, visual_bell_color);
-        S(second_transparent_bg, second_transparent_bg);
 #undef SI
 #undef S
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(profiles); i++) {
+        self = (ColorProfile*)PyTuple_GET_ITEM(profiles, i);
+        set_transparent_background_colors(self->overriden_transparent_colors, transparent_background_colors);
+        if (change_configured) set_transparent_background_colors(self->configured_transparent_colors, transparent_background_colors);
+    }
+    if (PyErr_Occurred()) return NULL;
     Py_RETURN_NONE;
+}
+
+bool
+colorprofile_to_transparent_color(const ColorProfile *self, unsigned index, color_type *color, float *opacity) {
+    *color = UINT32_MAX; *opacity = 1.0;
+    if (index < arraysz(self->configured_transparent_colors)) {
+        if (self->overriden_transparent_colors[index].is_set) {
+            *color = self->overriden_transparent_colors[index].color; *opacity = self->overriden_transparent_colors[index].opacity;
+            if (*opacity < 0) *opacity = OPT(background_opacity);
+            return true;
+        }
+        if (self->configured_transparent_colors[index].is_set) {
+            *color = self->configured_transparent_colors[index].color; *opacity = self->configured_transparent_colors[index].opacity;
+            if (*opacity < 0) *opacity = OPT(background_opacity);
+            return true;
+        }
+    }
+    return false;
 }
 
 DynamicColor
@@ -264,20 +303,21 @@ colorprofile_to_color_with_fallback(ColorProfile *self, DynamicColor entry, Dyna
     }
     return entry.rgb;
 }
+static Color* alloc_color(unsigned char r, unsigned char g, unsigned char b, unsigned a);
 
 static PyObject*
 as_dict(ColorProfile *self, PyObject *args UNUSED) {
 #define as_dict_doc "Return all colors as a dictionary of color_name to integer or None (names are the same as used in kitty.conf)"
-    PyObject *ans = PyDict_New();
+    RAII_PyObject(ans, PyDict_New());
     if (ans == NULL) return PyErr_NoMemory();
     for (unsigned i = 0; i < arraysz(self->color_table); i++) {
         static char buf[32] = {0};
         snprintf(buf, sizeof(buf) - 1, "color%u", i);
         PyObject *val = PyLong_FromUnsignedLong(self->color_table[i]);
-        if (!val) { Py_CLEAR(ans); return PyErr_NoMemory(); }
+        if (!val) { return PyErr_NoMemory(); }
         int ret = PyDict_SetItemString(ans, buf, val);
         Py_CLEAR(val);
-        if (ret != 0) { Py_CLEAR(ans); return NULL; }
+        if (ret != 0) { return NULL; }
     }
 #define D(attr, name) { \
     if (self->overridden.attr.type != COLOR_NOT_SET) { \
@@ -288,17 +328,33 @@ as_dict(ColorProfile *self, PyObject *args UNUSED) {
             color_type c = colorprofile_to_color(self, self->overridden.attr, self->configured.attr).rgb; \
             val = PyLong_FromUnsignedLong(c); \
         } \
-        if (!val) { Py_CLEAR(ans); return NULL; } \
+        if (!val) { return NULL; } \
         ret = PyDict_SetItemString(ans, #name, val); \
         Py_CLEAR(val); \
-        if (ret != 0) { Py_CLEAR(ans); return NULL; } \
+        if (ret != 0) { return NULL; } \
     }}
     D(default_fg, foreground); D(default_bg, background);
     D(cursor_color, cursor); D(cursor_text_color, cursor_text); D(highlight_fg, selection_foreground);
-    D(highlight_bg, selection_background); D(visual_bell_color, visual_bell_color); D(second_transparent_bg, second_transparent_bg);
-
+    D(highlight_bg, selection_background); D(visual_bell_color, visual_bell_color);
+    RAII_PyObject(transparent_background_colors, PyList_New(0));
+    if (!transparent_background_colors) return NULL;
+    for (size_t i = 0; i < arraysz(self->overriden_transparent_colors); i++) {
+        TransparentDynamicColor *c = NULL;
+        if (self->overriden_transparent_colors[i].is_set) c = self->overriden_transparent_colors + i;
+        else if (self->configured_transparent_colors[i].is_set) c = self->configured_transparent_colors + i;
+        if (c) {
+            RAII_PyObject(t, Py_BuildValue("Nf", alloc_color((c->color >> 16) & 0xff, (c->color >> 8) & 0xff, c->color & 0xff, 0), c->opacity));
+            if (!t) return NULL;
+            if (PyList_Append(transparent_background_colors, t) != 0) return NULL;
+        }
+    }
+    if (PyList_GET_SIZE(transparent_background_colors)) {
+        RAII_PyObject(t, PyList_AsTuple(transparent_background_colors));
+        if (!t) return NULL;
+        if (PyDict_SetItemString(ans, "transparent_background_colors", t) != 0) return NULL;
+    }
 #undef D
-    return ans;
+    return Py_NewRef(ans);
 }
 
 static PyObject*
@@ -374,6 +430,8 @@ copy_color_table_to_buffer(ColorProfile *self, color_type *buf, int offset, size
 static void
 push_onto_color_stack_at(ColorProfile *self, unsigned int i) {
     self->color_stack[i].dynamic_colors = self->overridden;
+    memcpy(self->color_stack[i].transparent_colors, self->overriden_transparent_colors, sizeof(self->overriden_transparent_colors));
+    self->color_stack[i].dynamic_colors = self->overridden;
     memcpy(self->color_stack[i].color_table, self->color_table, sizeof(self->color_stack->color_table));
 }
 
@@ -381,6 +439,7 @@ static void
 copy_from_color_stack_at(ColorProfile *self, unsigned int i) {
     self->overridden = self->color_stack[i].dynamic_colors;
     memcpy(self->color_table, self->color_stack[i].color_table, sizeof(self->color_table));
+    memcpy(self->overriden_transparent_colors, self->color_stack[i].transparent_colors, sizeof(self->overriden_transparent_colors));
 }
 
 bool
@@ -445,7 +504,6 @@ default_color_table(PyObject *self UNUSED, PyObject *args UNUSED) {
 
 // Boilerplate {{{
 
-static Color* alloc_color(unsigned char r, unsigned char g, unsigned char b, unsigned a);
 #define CGETSET(name, nullable) \
     static PyObject* name##_get(ColorProfile *self, void UNUSED *closure) {  \
         DynamicColor ans = colorprofile_to_color(self, self->overridden.name, self->configured.name);  \
@@ -477,7 +535,6 @@ CGETSET(cursor_text_color, true)
 CGETSET(highlight_fg, true)
 CGETSET(highlight_bg, true)
 CGETSET(visual_bell_color, true)
-CGETSET(second_transparent_bg, true)
 #undef CGETSET
 
 static PyGetSetDef cp_getsetters[] = {
@@ -488,7 +545,6 @@ static PyGetSetDef cp_getsetters[] = {
     GETSET(highlight_fg)
     GETSET(highlight_bg)
     GETSET(visual_bell_color)
-    GETSET(second_transparent_bg)
     {NULL}  /* Sentinel */
 };
 
@@ -508,6 +564,36 @@ reload_from_opts(ColorProfile *self, PyObject *args UNUSED) {
     Py_RETURN_NONE;
 }
 
+static PyObject*
+get_transparent_background_color(ColorProfile *self, PyObject *index) {
+    if (!PyLong_Check(index)) { PyErr_SetString(PyExc_TypeError, "index must be an int"); return NULL; }
+    unsigned long idx = PyLong_AsUnsignedLong(index);
+    if (PyErr_Occurred()) return NULL;
+    if (idx >= arraysz(self->configured_transparent_colors)) Py_RETURN_NONE;
+    TransparentDynamicColor *c = self->overriden_transparent_colors[idx].is_set ? self->overriden_transparent_colors + idx : self->configured_transparent_colors + idx;
+    if (!c->is_set) Py_RETURN_NONE;
+    float opacity = c->opacity >= 0 ? c->opacity : OPT(background_opacity);
+    return (PyObject*)alloc_color((c->color >> 16) & 0xff, (c->color >> 8) & 0xff, c->color & 0xff, (unsigned)(255.f * opacity));
+}
+
+static PyObject*
+set_transparent_background_color(ColorProfile *self, PyObject *const *args, Py_ssize_t nargs) {
+    if (nargs < 1) { PyErr_SetString(PyExc_TypeError, "must specify index"); return NULL; }
+    if (!PyLong_Check(args[0])) { PyErr_SetString(PyExc_TypeError, "index must be an int"); return NULL; }
+    unsigned long idx = PyLong_AsUnsignedLong(args[0]);
+    if (PyErr_Occurred()) return NULL;
+    if (idx >= arraysz(self->configured_transparent_colors)) Py_RETURN_NONE;
+    if (nargs < 2) { self->overriden_transparent_colors[idx].is_set = false; Py_RETURN_NONE; }
+    if (!PyObject_TypeCheck(args[1], &Color_Type)) { PyErr_SetString(PyExc_TypeError, "color must be Color object"); return NULL; }
+    Color *c = (Color*)args[1];
+    float opacity = (float)(c->color.alpha) / 255.f;
+    if (nargs > 2 && PyFloat_Check(args[2])) opacity = (float)PyFloat_AsDouble(args[2]);
+    self->overriden_transparent_colors[idx].is_set = true;
+    self->overriden_transparent_colors[idx].color = c->color.rgb;
+    self->overriden_transparent_colors[idx].opacity = MAX(-1.f, MIN(opacity, 1.f));
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef cp_methods[] = {
     METHOD(reset_color_table, METH_NOARGS)
     METHOD(as_dict, METH_NOARGS)
@@ -515,7 +601,9 @@ static PyMethodDef cp_methods[] = {
     METHOD(as_color, METH_O)
     METHOD(reset_color, METH_O)
     METHOD(set_color, METH_VARARGS)
+    METHODB(get_transparent_background_color, METH_O),
     METHODB(reload_from_opts, METH_VARARGS),
+    {"set_transparent_background_color", (PyCFunction)(void(*)(void))set_transparent_background_color, METH_FASTCALL, ""},
     {NULL}  /* Sentinel */
 };
 
@@ -552,7 +640,7 @@ new_color(PyTypeObject *type UNUSED, PyObject *args, PyObject *kwds) {
 }
 
 static PyObject*
-color_as_int(Color *self) {
+Color_as_int(Color *self) {
     return PyLong_FromUnsignedLong(self->color.val);
 }
 
@@ -566,7 +654,7 @@ color_truediv(Color *self, PyObject *divisor) {
 }
 
 static PyNumberMethods color_number_methods = {
-    .nb_int = (unaryfunc)color_as_int,
+    .nb_int = (unaryfunc)Color_as_int,
     .nb_true_divide = (binaryfunc)color_truediv,
 };
 

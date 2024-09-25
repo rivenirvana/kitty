@@ -809,14 +809,9 @@ class ColorProfile:
     @visual_bell_color.setter
     def visual_bell_color(self, val: Union[None|int|Color]) -> None: ...
 
-    @property
-    def second_transparent_bg(self) -> Optional[Color]: ...
-    @second_transparent_bg.setter
-    def second_transparent_bg(self, val: Union[None|int|Color]) -> None: ...
-
     def __init__(self, opts: Optional[Options] = None): ...
 
-    def as_dict(self) -> Dict[str, Optional[int]]:
+    def as_dict(self) -> Dict[str, int | None | tuple[tuple[Color, float], ...]]:
         pass
 
     def as_color(self, val: int) -> Optional[Color]:
@@ -833,9 +828,13 @@ class ColorProfile:
 
     def reload_from_opts(self, opts: Optional[Options] = None) -> None: ...
 
+    def get_transparent_background_color(self, index: int) -> Color | None: ...
+    def set_transparent_background_color(self, index: int, color: Color | None = None, opacity: float | None = None) -> None: ...
+
 
 def patch_color_profiles(
-    spec: Dict[str, Optional[int]], profiles: Tuple[ColorProfile, ...], change_configured: bool
+        spec: Dict[str, Optional[int]], transparent_background_colors: tuple[tuple[Color, float], ...],
+        profiles: Tuple[ColorProfile, ...], change_configured: bool
 ) -> None:
     pass
 

@@ -409,7 +409,6 @@ option_names = (  # {{{
  'scrollback_lines',
  'scrollback_pager',
  'scrollback_pager_history_size',
- 'second_transparent_bg',
  'select_by_word_characters',
  'select_by_word_characters_forward',
  'selection_background',
@@ -443,6 +442,7 @@ option_names = (  # {{{
  'text_composition_strategy',
  'text_fg_override_threshold',
  'touch_scroll_multiplier',
+ 'transparent_background_colors',
  'undercurl_style',
  'underline_hyperlinks',
  'update_check_interval',
@@ -574,7 +574,6 @@ class Options:
     scrollback_lines: int = 2000
     scrollback_pager: typing.List[str] = ['less', '--chop-long-lines', '--RAW-CONTROL-CHARS', '+INPUT_LINE_NUMBER']
     scrollback_pager_history_size: int = 0
-    second_transparent_bg: typing.Optional[kitty.fast_data_types.Color] = None
     select_by_word_characters: str = '@-./_~?&=%+#'
     select_by_word_characters_forward: str = ''
     selection_background: typing.Optional[kitty.fast_data_types.Color] = Color(255, 250, 205)
@@ -607,6 +606,7 @@ class Options:
     text_composition_strategy: str = 'platform'
     text_fg_override_threshold: float = 0.0
     touch_scroll_multiplier: float = 1.0
+    transparent_background_colors: typing.Tuple[typing.Tuple[kitty.fast_data_types.Color, float], ...] = ()
     undercurl_style: choices_for_undercurl_style = 'thin-sparse'
     underline_hyperlinks: choices_for_underline_hyperlinks = 'hover'
     update_check_interval: float = 24.0
@@ -1035,7 +1035,6 @@ nullable_colors = frozenset({
     'active_border_color'
     'tab_bar_background'
     'tab_bar_margin_color'
-    'second_transparent_bg'
     'selection_foreground'
     'selection_background'
 })

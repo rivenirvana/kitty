@@ -19,8 +19,9 @@ from kitty.options.utils import (
     shell_integration, store_multiple, symbol_map, tab_activity_symbol, tab_bar_edge,
     tab_bar_margin_height, tab_bar_min_tabs, tab_fade, tab_font_style, tab_separator,
     tab_title_template, titlebar_color, to_cursor_shape, to_cursor_unfocused_shape, to_font_size,
-    to_layout_names, to_modifiers, url_prefixes, url_style, visual_bell_duration,
-    visual_window_select_characters, window_border_width, window_logo_scale, window_size
+    to_layout_names, to_modifiers, transparent_background_colors, url_prefixes, url_style,
+    visual_bell_duration, visual_window_select_characters, window_border_width, window_logo_scale,
+    window_size
 )
 
 
@@ -1193,9 +1194,6 @@ class Parser:
     def scrollback_pager_history_size(self, val: str, ans: typing.Dict[str, typing.Any]) -> None:
         ans['scrollback_pager_history_size'] = scrollback_pager_history_size(val)
 
-    def second_transparent_bg(self, val: str, ans: typing.Dict[str, typing.Any]) -> None:
-        ans['second_transparent_bg'] = to_color_or_none(val)
-
     def select_by_word_characters(self, val: str, ans: typing.Dict[str, typing.Any]) -> None:
         ans['select_by_word_characters'] = str(val)
 
@@ -1325,6 +1323,9 @@ class Parser:
 
     def touch_scroll_multiplier(self, val: str, ans: typing.Dict[str, typing.Any]) -> None:
         ans['touch_scroll_multiplier'] = float(val)
+
+    def transparent_background_colors(self, val: str, ans: typing.Dict[str, typing.Any]) -> None:
+        ans['transparent_background_colors'] = transparent_background_colors(val)
 
     def undercurl_style(self, val: str, ans: typing.Dict[str, typing.Any]) -> None:
         val = val.lower()

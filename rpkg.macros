@@ -7,28 +7,11 @@ function cached {
     [[ -n $v ]] && echo -n "$v"
 }
 
-function git_revision {
-    cached git_revision && return
-
-    # find last merge
-    declare last_merge rest
-    read last_merge rest <<<"$(git log --merges --oneline -n1)"
-    [[ -n $last_merge ]] || abort "failed to find last merge"
-
-    # count commits since last merge, might be zero
-    declare count tag
-    count=$(git log --oneline HEAD "^$last_merge" | wc -l)
-    count=$((count + 1))
-    [[ ${count} -lt 10 ]] && tag="0${count}" || tag="${count}"
-
-    output "rev${tag}"
-}
-
 function git_log_tag {
     cached git_log_version && return
 
     declare changelog_version
-    changelog_version="$(awk '$1 ~ /^[0-9]+\./ && $2 ~ /^\[/{print; exit}' < docs/changelog.rst)"
+    changelog_version="$(awk '$1 ~ /^[0-9]+\./ && $2 ~ /^\[/{print; exit}' <docs/changelog.rst)"
 
     output "$changelog_version"
 }
@@ -37,26 +20,33 @@ function git_version {
     cached git_version && return
 
     declare version label
-    read version label <<< "$(git_log_tag)"
+    read version label <<<"$(git_log_tag)"
 
-    output "$version"
+    declare describe tag commits hash affix
+    describe=$(git describe --first-parent origin/master)
+    read tag commits hash <<<"${describe//-/ }"
+
+    [[ -z "${commits}" ]] && commits=0
+    [[ "${label}" == '[future]' ]] && affix='future' || affix='stable'
+    [[ -n "${hash}" ]] && hash=".${hash}"
+
+    output "${version}.${affix}.${commits}${hash}"
 }
 
 function git_release {
     cached git_release && return
 
-    declare version label
-    read version label <<< "$(git_log_tag)"
+    # find last merge
+    declare last_merge rest
+    read last_merge rest <<<"$(git log --merges --oneline -n1)"
+    [[ -n $last_merge ]] || abort "failed to find last merge"
 
-    declare describe tag commits hash prefix
-    describe=$(git describe --first-parent origin/master)
-    read tag commits hash <<< "${describe//-/ }"
+    # count commits since last merge; might be zero
+    declare release
+    release=$(git log --oneline HEAD "^$last_merge" | wc -l)
+    release=$((release + 1))
 
-    [[ -z "${commits}" ]] && commits=1
-    [[ -n "${hash}" ]] && hash=".${hash}"
-    [[ "${label}" == '[future]' ]] && prefix='future' || prefix='stable'
-
-    output "${commits}.${prefix}.$(git_revision)${hash}"
+    output "$release"
 }
 
 function git_changelog_date {

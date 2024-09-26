@@ -26,8 +26,8 @@ function git_version {
     describe=$(git describe --first-parent origin/master)
     read tag commits hash <<<"${describe//-/ }"
 
-    [[ -z "${commits}" ]] && commits=0
     [[ "${label}" == '[future]' ]] && affix='future' || affix='stable'
+    [[ -z "${commits}" ]] && commits=0
     [[ -n "${hash}" ]] && hash=".${hash}"
 
     output "${version}.${affix}.${commits}${hash}"

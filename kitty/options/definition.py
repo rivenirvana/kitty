@@ -3311,12 +3311,14 @@ note that not all software supports this. A value of :code:`none` means do not t
 
 
 opt('forward_stdio', 'no', option_type='to_bool', long_text='''
-Forward STDOUT and STDERR of the kitty process to child processes
-as file descriptors 3 and 4. This is useful for debugging as it
+Forward STDOUT and STDERR of the kitty process to child processes.
+This is useful for debugging as it
 allows child processes to print to kitty's STDOUT directly. For example,
-:code:`echo hello world >&3` in a shell will print to the parent kitty's
-STDOUT. When enabled, this also sets the :code:`KITTY_STDIO_FORWARDED=3`
-environment variable so child processes know about the forwarding.
+:code:`echo hello world >&$KITTY_STDIO_FORWARDED` in a shell will print
+to the parent kitty's STDOUT. Sets the :code:`KITTY_STDIO_FORWARDED=fdnum`
+environment variable so child processes know about the forwarding. Note that
+on macOS this prevents the shell from being run via the login utility so getlogin()
+will not work in programs run in this session.
 ''')
 
 opt('+menu_map', '',

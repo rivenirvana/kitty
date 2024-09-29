@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
 class InheritableFile(Protocol):
 
-    def close(self) -> None: ...
     def fileno(self) -> int: ...
 
 
@@ -256,6 +255,7 @@ class Child:
             env['KITTY_LISTEN_ON'] = boss.listening_on
         else:
             env.pop('KITTY_LISTEN_ON', None)
+        env.pop('KITTY_STDIO_FORWARDED', None)
         if self.cwd:
             # needed in case cwd is a symlink, in which case shells
             # can use it to display the current directory name rather
@@ -268,8 +268,6 @@ class Child:
         elif opts.terminfo_type == 'direct':
             env['TERMINFO'] = base64_terminfo_data()
         env['KITTY_INSTALLATION_DIR'] = kitty_base_dir
-        if opts.forward_stdio:
-            env['KITTY_STDIO_FORWARDED'] = '3'
         self.unmodified_argv = list(self.argv)
         if not self.should_run_via_run_shell_kitten and 'disabled' not in opts.shell_integration:
             from .shell_integration import modify_shell_environ
@@ -321,12 +319,14 @@ class Child:
             if ksi == 'invalid':
                 ksi = 'enabled'
             argv = [kitten_exe(), 'run-shell', '--shell', shlex.join(argv), '--shell-integration', ksi]
-            if is_macos:
+            if is_macos and not self.pass_fds and not opts.forward_stdio:
                 # In addition for getlogin() to work we need to run the shell
                 # via the /usr/bin/login wrapper, sigh.
                 # And login on macOS looks for .hushlogin in CWD instead of
                 # HOME, bloody idiotic so we cant cwd when running it.
                 # https://github.com/kovidgoyal/kitty/issues/6511
+                # login closes inherited file descriptors so dont use it when
+                # forward_stdio or pass_fds are used.
                 import pwd
                 user = pwd.getpwuid(os.geteuid()).pw_name
                 if cwd:
@@ -344,11 +344,6 @@ class Child:
             final_exe, cwd, tuple(argv), env, master, slave, stdin_read_fd, stdin_write_fd,
             ready_read_fd, ready_write_fd, tuple(handled_signals), kitten_exe(), opts.forward_stdio, pass_fds)
         os.close(slave)
-        for x in self.pass_fds:
-            if isinstance(x, int):
-                os.close(x)
-            else:
-                x.close()
         self.pass_fds = ()
         self.pid = pid
         self.child_fd = master

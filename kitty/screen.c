@@ -342,21 +342,42 @@ found:
 }
 
 static bool
+preserve_blank_output_start_line(Cursor *cursor, LineBuf *linebuf) {
+    if (cursor->x == 0 && cursor->y < linebuf->ynum && !linebuf->line_attrs[cursor->y].is_continued) {
+        linebuf_init_line(linebuf, cursor->y);
+        if (!linebuf->line->cpu_cells[0].ch) {
+            // we have a blank output start line, we need it to be preserved by
+            // reflow, so insert a dummy char
+            linebuf->line->cpu_cells[cursor->x++].ch = '<';
+            return true;
+        }
+    }
+    return false;
+}
+
+static void
+remove_blank_output_line_reservation_marker(Cursor *cursor, LineBuf *linebuf) {
+    if (cursor->y < linebuf->ynum) {
+        linebuf_init_line(linebuf, cursor->y);
+        linebuf->line->cpu_cells[0].ch = 0;
+        cursor->x = 0;
+    }
+}
+
+static bool
 screen_resize(Screen *self, unsigned int lines, unsigned int columns) {
     screen_pause_rendering(self, false, 0);
     lines = MAX(1u, lines); columns = MAX(1u, columns);
 
     bool is_main = self->linebuf == self->main_linebuf;
     index_type num_content_lines_before, num_content_lines_after;
-    bool dummy_output_inserted = false;
-    if (is_main && self->cursor->x == 0 && self->cursor->y < self->lines && self->linebuf->line_attrs[self->cursor->y].prompt_kind == OUTPUT_START) {
-        linebuf_init_line(self->linebuf, self->cursor->y);
-        if (!self->linebuf->line->cpu_cells[0].ch) {
-            // we have a blank output start line, we need it to be preserved by
-            // reflow, so insert a dummy char
-            self->linebuf->line->cpu_cells[self->cursor->x++].ch = '<';
-            dummy_output_inserted = true;
-        }
+    bool main_has_blank_line = false, alt_has_blank_line = false;
+    if (is_main) {
+        main_has_blank_line = preserve_blank_output_start_line(self->cursor, self->linebuf);
+        if (self->alt_savepoint.is_valid) alt_has_blank_line = preserve_blank_output_start_line(&self->alt_savepoint.cursor, self->alt_linebuf);
+    } else {
+        if (self->main_savepoint.is_valid) main_has_blank_line = preserve_blank_output_start_line(&self->main_savepoint.cursor, self->main_linebuf);
+        alt_has_blank_line = preserve_blank_output_start_line(self->cursor, self->linebuf);
     }
     unsigned int lines_after_cursor_before_resize = self->lines - self->cursor->y;
     CursorTrack cursor = {.before = {self->cursor->x, self->cursor->y}};
@@ -435,11 +456,8 @@ screen_resize(Screen *self, unsigned int lines, unsigned int columns) {
             sp->cursor.y = MIN(sp->cursor.y + 1, self->lines - 1);
         }
     }
-    if (dummy_output_inserted && self->cursor->y < self->lines) {
-        linebuf_init_line(self->linebuf, self->cursor->y);
-        self->linebuf->line->cpu_cells[0].ch = 0;
-        self->cursor->x = 0;
-    }
+    if (main_has_blank_line) remove_blank_output_line_reservation_marker(is_main ? self->cursor : &self->main_savepoint.cursor, self->main_linebuf);
+    if (alt_has_blank_line) remove_blank_output_line_reservation_marker(is_main ? &self->alt_savepoint.cursor : self->cursor, self->alt_linebuf);
     if (num_of_prompt_lines) {
         // Copy the old prompt lines without any reflow this prevents
         // flickering of prompt during resize. THe flicker is caused by the
@@ -4688,40 +4706,42 @@ scroll_prompt_to_bottom(Screen *self, PyObject *args UNUSED) {
     Py_RETURN_NONE;
 }
 
-static PyObject*
-dump_lines_with_attrs(Screen *self, PyObject *accum) {
-    int y = (self->linebuf == self->main_linebuf) ? -self->historybuf->count : 0;
-    PyObject *t;
-    while (y < (int)self->lines) {
-        Line *line = range_line_(self, y);
-        t = PyUnicode_FromFormat("\x1b[31m%d: \x1b[39m", y++);
-        if (t) {
-            PyObject_CallFunctionObjArgs(accum, t, NULL);
-            Py_DECREF(t);
-        }
-        switch (line->attrs.prompt_kind) {
-            case UNKNOWN_PROMPT_KIND:
-                break;
-            case PROMPT_START:
-                PyObject_CallFunction(accum, "s", "\x1b[32mprompt \x1b[39m");
-                break;
-            case SECONDARY_PROMPT:
-                PyObject_CallFunction(accum, "s", "\x1b[32msecondary_prompt \x1b[39m");
-                break;
-            case OUTPUT_START:
-                PyObject_CallFunction(accum, "s", "\x1b[33moutput \x1b[39m");
-                break;
-        }
-        if (line->attrs.is_continued) PyObject_CallFunction(accum, "s", "continued ");
-        if (line->attrs.has_dirty_text) PyObject_CallFunction(accum, "s", "dirty ");
-        PyObject_CallFunction(accum, "s", "\n");
-        t = line_as_unicode(line, false);
-        if (t) {
-            PyObject_CallFunctionObjArgs(accum, t, NULL);
-            Py_DECREF(t);
-        }
-        PyObject_CallFunction(accum, "s", "\n");
+static void
+dump_line_with_attrs(Screen *self, int y, PyObject *accum) {
+    Line *line = range_line_(self, y);
+    RAII_PyObject(u, PyUnicode_FromFormat("\x1b[31m%d: \x1b[39m", y++));
+    if (!u) return;
+    RAII_PyObject(r1, PyObject_CallOneArg(accum, u));
+    if (!r1) return;
+#define call_string(s) { RAII_PyObject(ret, PyObject_CallFunction(accum, "s", s)); if (!ret) return; }
+    switch (line->attrs.prompt_kind) {
+        case UNKNOWN_PROMPT_KIND: break;
+        case PROMPT_START: call_string("\x1b[32mprompt \x1b[39m"); break;
+        case SECONDARY_PROMPT: call_string("\x1b[32msecondary_prompt \x1b[39m"); break;
+        case OUTPUT_START: call_string("\x1b[33moutput \x1b[39m"); break;
     }
+    if (line->attrs.is_continued) call_string("continued ");
+    if (line->attrs.has_dirty_text) call_string("dirty ");
+    call_string("\n");
+    RAII_PyObject(t, line_as_unicode(line, false)); if (!t) return;
+    RAII_PyObject(r2, PyObject_CallOneArg(accum, t)); if (!r2) return;
+    call_string("\n");
+#undef call_string
+}
+
+static PyObject*
+dump_lines_with_attrs(Screen *self, PyObject *args) {
+    PyObject *accum; int which_screen = -1;
+    if (!PyArg_ParseTuple(args, "O|i", &accum, &which_screen)) return NULL;
+    LineBuf *orig = self->linebuf;
+    switch(which_screen) {
+        case 0: self->linebuf = self->main_linebuf; break;
+        case 1: self->linebuf = self->alt_linebuf; break;
+    }
+    int y = (self->linebuf == self->main_linebuf) ? -self->historybuf->count : 0;
+    while (y < (int)self->lines && !PyErr_Occurred()) dump_line_with_attrs(self, y++, accum);
+    self->linebuf = orig;
+    if (PyErr_Occurred()) return NULL;
     Py_RETURN_NONE;
 }
 
@@ -4777,7 +4797,7 @@ static PyMethodDef methods[] = {
     METHODB(test_parse_written_data, METH_VARARGS),
     MND(line_edge_colors, METH_NOARGS)
     MND(line, METH_O)
-    MND(dump_lines_with_attrs, METH_O)
+    MND(dump_lines_with_attrs, METH_VARARGS)
     MND(cursor_at_prompt, METH_NOARGS)
     MND(visual_line, METH_VARARGS)
     MND(current_url_text, METH_NOARGS)

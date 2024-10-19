@@ -280,6 +280,22 @@ class TestScreen(BaseTest):
         self.ae(s.cursor.x, 1)
 
     def test_resize(self):
+        # test that trailing blank line is preserved on resize
+        s = self.create_screen(cols=5, lines=5, scrollback=15)
+        for i in range(3):
+            s.draw(f'oo{i}'), s.index(), s.carriage_return()
+        s.draw('$ pp'), s.index(), s.carriage_return()
+        s.resize(s.lines, 2)
+        self.assertFalse(str(s.line(s.cursor.y)))
+        self.assertFalse(s.cursor.x)
+        # test that only happens when last line is not continued
+        s = self.create_screen(cols=5, lines=5, scrollback=15)
+        for i in range(3):
+            s.draw(f'oo{i}'), s.index(), s.carriage_return()
+        s.draw('p' * (s.columns + 2)), s.carriage_return()
+        s.resize(s.lines, 2)
+        self.assertTrue(str(s.line(s.cursor.y)))
+
         s = self.create_screen(scrollback=6)
         s.draw(''.join([str(i) * s.columns for i in range(s.lines)]))
         s.resize(3, 10)
@@ -1014,6 +1030,7 @@ class TestScreen(BaseTest):
         def ac(idx, count):
             self.ae(c.wtcbuf, f'\033[{idx};{count}#Q'.encode('ascii'))
             c.clear()
+        # ]]]]]]]]]]]]]]]]}}}}}}}}}}}}}}}}))))))))))))))))))))))
 
         w('#R')
         ac(0, 0)
@@ -1055,18 +1072,18 @@ class TestScreen(BaseTest):
             t('http://moo.com', before=st, after=e)
         for trailer in ')-=':
             t('http://moo.com' + trailer)
-        for trailer in '{}([<>':
+        for trailer in '{}([<>':   # )]>
             t('http://moo.com', after=trailer)
         t('http://moo.com', x=s.columns - 9)
         t('https://wraps-by-one-char.com', before='[', after=']')
         t('http://[::1]:8080')
         t('https://wr[aps-by-one-ch]ar.com')
-        t('http://[::1]:8080/x', after='[')
+        t('http://[::1]:8080/x', after='[')  # ]
         t('http://[::1]:8080/x]y34', expected='http://[::1]:8080/x')
-        t('https://wraps-by-one-char.com[]/x', after='[')
+        t('https://wraps-by-one-char.com[]/x', after='[')  # ]
 
     def test_prompt_marking(self):
-        s = self.create_screen()
+        # ]]]]]]]]]]]]]]]]}}}}}}}}}}}}}}}}))))))))))))))))))))))
 
         def mark_prompt():
             parse_bytes(s, b'\033]133;A\007')
@@ -1074,6 +1091,25 @@ class TestScreen(BaseTest):
         def mark_output():
             parse_bytes(s, b'\033]133;C\007')
 
+        def draw_prompt(x):
+            mark_prompt(), s.draw(f'$ {x}'), s.carriage_return(), s.index()
+
+        def draw_output(n, x='', m=True):
+            if m:
+                mark_output()
+            for i in range(n):
+                s.draw(f'{i}{x}'), s.index(), s.carriage_return()
+
+        s = self.create_screen(cols=5, lines=5, scrollback=15)
+        draw_output(3, 'oo')
+        draw_prompt('pp')
+        mark_output()
+        s.toggle_alt_screen()
+        s.resize(s.lines, 2)
+        s.toggle_alt_screen()
+        self.assertFalse(str(s.line(s.cursor.y)))
+
+        s = self.create_screen()
         for i in range(4):
             mark_prompt()
             s.draw(f'$ {i}')
@@ -1133,16 +1169,7 @@ class TestScreen(BaseTest):
         mark_prompt(), s.draw('$ 1')
         self.ae(fco(), 'abcd\n12')
         self.ae(lco(), 'abcd\n12')
-        self.ae(lco(as_ansi=True), '\x1b[m\x1b]133;C\x1b\\abcd\n\x1b[m12')
-
-        def draw_prompt(x):
-            mark_prompt(), s.draw(f'$ {x}'), s.carriage_return(), s.index()
-
-        def draw_output(n, x='', m=True):
-            if m:
-                mark_output()
-            for i in range(n):
-                s.draw(f'{i}{x}'), s.index(), s.carriage_return()
+        self.ae(lco(as_ansi=True), '\x1b[m\x1b]133;C\x1b\\abcd\n\x1b[m12')  # ]]]
 
         s = self.create_screen(cols=5, lines=5, scrollback=15)
         draw_output(1, 'start', False)

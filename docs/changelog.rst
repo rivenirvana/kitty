@@ -9,6 +9,16 @@ To update |kitty|, :doc:`follow the instructions <binary>`.
 Recent major new features
 ---------------------------
 
+Cursor trails [0.37]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show an animated trail when the text cursor makes large jumps making it easy
+to follow cursor movements. Inspired by the similar feature in neovide, but
+works with terminal multiplexers and kitty windows as well. See :pull:`the pull
+request <7970>` for a demonstration video. This feature is optional and must be
+turned on by the :opt:`cursor_trail` option in :file:`kitty.conf`.
+
+
 Variable font support [0.36]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -74,7 +84,7 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.37.0 [future]
+0.37.0 [2024-10-30]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - A new optional :opt:`text cursor movement animation <cursor_trail>` that

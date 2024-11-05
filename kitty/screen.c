@@ -107,6 +107,7 @@ new_screen_object(PyTypeObject *type, PyObject *args, PyObject UNUSED *kwds) {
         }
         self->vt_parser = alloc_vt_parser(window_id);
         if (self->vt_parser == NULL) { Py_CLEAR(self); return PyErr_NoMemory(); }
+        self->text_cache = tc_alloc(); if (!self->text_cache) { Py_CLEAR(self); return PyErr_NoMemory(); }
         self->reload_all_gpu_data = true;
         self->cell_size.width = cell_width; self->cell_size.height = cell_height;
         self->columns = columns; self->lines = lines;
@@ -125,9 +126,9 @@ new_screen_object(PyTypeObject *type, PyObject *args, PyObject UNUSED *kwds) {
         self->test_child = test_child; Py_INCREF(test_child);
         self->cursor = alloc_cursor();
         self->color_profile = alloc_color_profile();
-        self->main_linebuf = alloc_linebuf(lines, columns); self->alt_linebuf = alloc_linebuf(lines, columns);
+        self->main_linebuf = alloc_linebuf(lines, columns, self->text_cache); self->alt_linebuf = alloc_linebuf(lines, columns, self->text_cache);
         self->linebuf = self->main_linebuf;
-        self->historybuf = alloc_historybuf(MAX(scrollback, lines), columns, OPT(scrollback_pager_history_size));
+        self->historybuf = alloc_historybuf(MAX(scrollback, lines), columns, OPT(scrollback_pager_history_size), self->text_cache);
         self->main_grman = grman_alloc(false);
         self->alt_grman = grman_alloc(false);
         self->active_hyperlink_id = 0;
@@ -135,10 +136,11 @@ new_screen_object(PyTypeObject *type, PyObject *args, PyObject UNUSED *kwds) {
         self->grman = self->main_grman;
         self->disable_ligatures = OPT(disable_ligatures);
         self->main_tabstops = PyMem_Calloc(2 * self->columns, sizeof(bool));
+        self->lc = alloc_list_of_chars();
         if (
             self->cursor == NULL || self->main_linebuf == NULL || self->alt_linebuf == NULL ||
             self->main_tabstops == NULL || self->historybuf == NULL || self->main_grman == NULL ||
-            self->alt_grman == NULL || self->color_profile == NULL
+            self->alt_grman == NULL || self->color_profile == NULL || self->lc == NULL
         ) {
             Py_CLEAR(self); return NULL;
         }
@@ -214,7 +216,7 @@ screen_dirty_sprite_positions(Screen *self) {
 
 static HistoryBuf*
 realloc_hb(HistoryBuf *old, unsigned int lines, unsigned int columns, ANSIBuf *as_ansi_buf) {
-    HistoryBuf *ans = alloc_historybuf(lines, columns, 0);
+    HistoryBuf *ans = alloc_historybuf(lines, columns, 0, old->text_cache);
     if (ans == NULL) { PyErr_NoMemory(); return NULL; }
     ans->pagerhist = old->pagerhist; old->pagerhist = NULL;
     historybuf_rewrap(old, ans, as_ansi_buf);
@@ -232,7 +234,7 @@ typedef struct CursorTrack {
 
 static LineBuf*
 realloc_lb(LineBuf *old, unsigned int lines, unsigned int columns, index_type *nclb, index_type *ncla, HistoryBuf *hb, CursorTrack *a, CursorTrack *b, ANSIBuf *as_ansi_buf) {
-    LineBuf *ans = alloc_linebuf(lines, columns);
+    LineBuf *ans = alloc_linebuf(lines, columns, old->text_cache);
     if (ans == NULL) { PyErr_NoMemory(); return NULL; }
     a->temp.x = a->before.x; a->temp.y = a->before.y;
     b->temp.x = b->before.x; b->temp.y = b->before.y;
@@ -334,7 +336,7 @@ found:
             linebuf_init_line(self->main_linebuf, y);
             // this is needed because screen_resize() checks to see if the cursor is beyond the content,
             // so insert some fake content
-            self->main_linebuf->line->cpu_cells[0].ch = ' ';
+            cell_set_char(self->main_linebuf->line->cpu_cells, ' ');
             if (y < (int)self->cursor->y) (*num_of_prompt_lines_above_cursor)++;
         }
     }
@@ -345,10 +347,10 @@ static bool
 preserve_blank_output_start_line(Cursor *cursor, LineBuf *linebuf) {
     if (cursor->x == 0 && cursor->y < linebuf->ynum && !linebuf->line_attrs[cursor->y].is_continued) {
         linebuf_init_line(linebuf, cursor->y);
-        if (!linebuf->line->cpu_cells[0].ch) {
+        if (!cell_has_text(linebuf->line->cpu_cells)) {
             // we have a blank output start line, we need it to be preserved by
             // reflow, so insert a dummy char
-            linebuf->line->cpu_cells[cursor->x++].ch = '<';
+            cell_set_char(linebuf->line->cpu_cells + cursor->x++, '<');
             return true;
         }
     }
@@ -359,7 +361,7 @@ static void
 remove_blank_output_line_reservation_marker(Cursor *cursor, LineBuf *linebuf) {
     if (cursor->y < linebuf->ynum) {
         linebuf_init_line(linebuf, cursor->y);
-        linebuf->line->cpu_cells[0].ch = 0;
+        cell_set_char(linebuf->line->cpu_cells, 0);
         cursor->x = 0;
     }
 }
@@ -398,7 +400,7 @@ screen_resize(Screen *self, unsigned int lines, unsigned int columns) {
     RAII_PyObject(prompt_copy, NULL);
     index_type num_of_prompt_lines = 0, num_of_prompt_lines_above_cursor = 0;
     if (is_main) {
-        prompt_copy = (PyObject*)alloc_linebuf(self->lines, self->columns);
+        prompt_copy = (PyObject*)alloc_linebuf(self->lines, self->columns, self->text_cache);
         num_of_prompt_lines = prevent_current_prompt_from_rewrapping(self, (LineBuf*)prompt_copy, &num_of_prompt_lines_above_cursor);
     }
     LineBuf *n = realloc_lb(self->main_linebuf, lines, columns, &num_content_lines_before, &num_content_lines_after, self->historybuf, &cursor, &main_saved_cursor, &self->as_ansi_buf);
@@ -500,6 +502,7 @@ static void
 dealloc(Screen* self) {
     pthread_mutex_destroy(&self->write_buf_lock);
     free_vt_parser(self->vt_parser); self->vt_parser = NULL;
+    self->text_cache = tc_decref(self->text_cache);
     Py_CLEAR(self->main_grman);
     Py_CLEAR(self->alt_grman);
     Py_CLEAR(self->last_reported_cwd);
@@ -527,6 +530,7 @@ dealloc(Screen* self) {
     free_hyperlink_pool(self->hyperlink_pool);
     free(self->as_ansi_buf.buf);
     free(self->last_rendered_window_char.canvas);
+    if (self->lc) { cleanup_list_of_chars(self->lc); free(self->lc); self->lc = NULL; }
     Py_TYPE(self)->tp_free((PyObject*)self);
 } // }}}
 
@@ -593,8 +597,7 @@ move_widened_char(Screen *self, text_loop_state *s, CPUCell* cpu_cell, GPUCell *
     self->cursor->x = xpos; self->cursor->y = ypos;
     CPUCell src_cpu = *cpu_cell, *dest_cpu;
     GPUCell src_gpu = *gpu_cell, *dest_gpu;
-    memcpy(cpu_cell, &s->cc, sizeof(s->cc));
-    memcpy(gpu_cell, &s->g, sizeof(s->g));
+    *cpu_cell = s->cc; *gpu_cell = s->g;
 
     if (self->modes.mDECAWM) {  // overflow goes onto next line
         continue_to_next_line(self);
@@ -607,7 +610,7 @@ move_widened_char(Screen *self, text_loop_state *s, CPUCell* cpu_cell, GPUCell *
         self->cursor->x = self->columns;
     }
     *dest_cpu = src_cpu; *dest_gpu = src_gpu;
-    memcpy(dest_cpu + 1 , &s->cc, sizeof(s->cc));
+    *(dest_cpu + 1) = s->cc; *(dest_gpu + 1) = s->g;
     memcpy(dest_gpu + 1, &s->g, sizeof(s->g));
     dest_gpu[1].attrs.width = 0;
 }
@@ -641,15 +644,16 @@ draw_second_flag_codepoint(Screen *self, char_type ch) {
     CPUCell *cp; GPUCell *gp;
     linebuf_init_cells(self->linebuf, ypos, &cp, &gp);
     CPUCell *cell = cp + xpos;
-    if (!is_flag_pair(cell->ch, ch) || cell->cc_idx[0]) return false;
-    line_add_combining_char(cp, gp, ch, xpos);
+    text_in_cell(cell, self->text_cache, self->lc);
+    if (self->lc->count != 1 || !is_flag_pair(self->lc->chars[0], ch)) return false;
+    line_add_combining_char(cp, gp, self->text_cache, self->lc, ch, xpos);
     return true;
 }
 
 static void
 zero_cells(text_loop_state *s, CPUCell *c, GPUCell *g) {
-    memcpy(c, &s->cc, sizeof(s->cc));
-    memcpy(g, &s->g, sizeof(s->g));
+    *c = s->cc;
+    *g = s->g;
 }
 
 static void
@@ -668,11 +672,12 @@ draw_combining_char(Screen *self, text_loop_state *s, char_type ch) {
     if (has_prev_char) {
         CPUCell *cp; GPUCell *gp;
         linebuf_init_cells(self->linebuf, ypos, &cp, &gp);
-        line_add_combining_char(cp, gp, ch, xpos);
-        if (ch == 0xfe0f) {  // emoji presentation variation marker makes default text presentation emoji (narrow emoji) into wide emoji
+        bool added = line_add_combining_char(cp, gp, self->text_cache, self->lc, ch, xpos);
+        unsigned base_pos = self->lc->count - (added ? 2 : 1);
+        if (ch == VS16) {  // emoji presentation variation marker makes default text presentation emoji (narrow emoji) into wide emoji
             CPUCell *cpu_cell = cp + xpos;
             GPUCell *gpu_cell = gp + xpos;
-            if (gpu_cell->attrs.width != 2 && cpu_cell->cc_idx[0] == VS16 && is_emoji_presentation_base(cpu_cell->ch)) {
+            if (gpu_cell->attrs.width != 2 && added && self->lc->chars[base_pos + 1] == VS16 && is_emoji_presentation_base(self->lc->chars[base_pos])) {
                 gpu_cell->attrs.width = 2;
                 if (xpos + 1 < self->columns) {
                     zero_cells(s, cp + xpos + 1, gp + xpos + 1);
@@ -680,13 +685,13 @@ draw_combining_char(Screen *self, text_loop_state *s, char_type ch) {
                     self->cursor->x++;
                 } else move_widened_char(self, s, cpu_cell, gpu_cell, xpos, ypos);
             }
-        } else if (ch == 0xfe0e) {
+        } else if (ch == VS15) {
             CPUCell *cpu_cell = cp + xpos;
             GPUCell *gpu_cell = gp + xpos;
-            if (gpu_cell->attrs.width == 0 && cpu_cell->ch == 0 && xpos > 0) {
+            if (gpu_cell->attrs.width == 0 && !cell_has_text(cpu_cell) && xpos > 0) {
                 cpu_cell--; gpu_cell--;
             }
-            if (gpu_cell->attrs.width == 2 && cpu_cell->cc_idx[0] == VS15 && is_emoji_presentation_base(cpu_cell->ch)) {
+            if (gpu_cell->attrs.width == 2 && added && self->lc->chars[base_pos + 1] == VS15 && is_emoji_presentation_base(self->lc->chars[base_pos])) {
                 gpu_cell->attrs.width = 1;
                 self->cursor->x--;
             }
@@ -714,7 +719,7 @@ cursor_on_wide_char_trailer(Screen *self, text_loop_state *s) {
 static void
 move_cursor_off_wide_char_trailer(Screen *self, text_loop_state *s) {
     zero_cells(s, s->cp + self->cursor->x - 1, s->gp + self->cursor->x - 1);
-    s->cp[self->cursor->x-1].ch = ' ';
+    cell_set_char(&s->cp[self->cursor->x-1], ' ');
     zero_cells(s, s->cp + self->cursor->x, s->gp + self->cursor->x);
 }
 
@@ -826,7 +831,7 @@ draw_text_loop(Screen *self, const uint32_t *chars, size_t num_chars, text_loop_
             s->image_placeholder_marked = true;
         }
         zero_cells(s, s->cp + self->cursor->x, s->gp + self->cursor->x);
-        s->cp[self->cursor->x].ch = ch;
+        cell_set_char(&s->cp[self->cursor->x], ch);
         self->cursor->x++;
         if (char_width == 2) {
             s->gp[self->cursor->x-1].attrs.width = 2;
@@ -1447,15 +1452,15 @@ screen_tab(Screen *self) {
             bool ok = true;
             for (combining_type i = 0; i < diff; i++) {
                 CPUCell *c = cpu_cell + i;
-                if (c->ch != ' ' && c->ch != 0) { ok = false; break; }
+                if (cell_has_text(c) && !cell_is_char(c, ' ')) { ok = false; break; }
             }
             if (ok) {
                 for (combining_type i = 0; i < diff; i++) {
                     CPUCell *c = cpu_cell + i;
-                    c->ch = ' '; zero_at_ptr_count(c->cc_idx, arraysz(c->cc_idx));
+                    cell_set_char(c, ' ');
                 }
-                cpu_cell->ch = '\t';
-                cpu_cell->cc_idx[0] = diff;
+                self->lc->count = 2; self->lc->chars[0] = '\t'; self->lc->chars[1] = diff;
+                cell_set_chars(cpu_cell, self->text_cache, self->lc);
             }
         }
         self->cursor->x = found;
@@ -2539,7 +2544,7 @@ screen_pause_rendering(Screen *self, bool pause, int for_in_ms) {
     memcpy(&self->paused_rendering.color_profile, self->color_profile, sizeof(self->paused_rendering.color_profile));
     if (!self->paused_rendering.linebuf || self->paused_rendering.linebuf->xnum != self->columns || self->paused_rendering.linebuf->ynum != self->lines) {
         if (self->paused_rendering.linebuf) Py_CLEAR(self->paused_rendering.linebuf);
-        self->paused_rendering.linebuf = alloc_linebuf(self->lines, self->columns);
+        self->paused_rendering.linebuf = alloc_linebuf(self->lines, self->columns, self->text_cache);
         if (!self->paused_rendering.linebuf) { PyErr_Clear(); self->paused_rendering.expires_at = 0; return false; }
     }
     for (index_type y = 0; y < self->lines; y++) {
@@ -2616,8 +2621,7 @@ screen_has_marker(Screen *self) {
     return self->marker != NULL;
 }
 
-static uint32_t diacritic_to_rowcolumn(combining_type m) {
-    char_type c = codepoint_for_mark(m);
+static uint32_t diacritic_to_rowcolumn(char_type c) {
     return diacritic_to_num(c);
 }
 
@@ -2654,21 +2658,22 @@ screen_render_line_graphics(Screen *self, Line *line, int32_t row) {
         uint32_t cur_img_id_higher8bits = 0;
         uint32_t cur_img_row = 0;
         uint32_t cur_img_col = 0;
-        if (cpu_cell->ch == IMAGE_PLACEHOLDER_CHAR) {
+        if (cell_first_char(cpu_cell, self->text_cache) == IMAGE_PLACEHOLDER_CHAR) {
             line->attrs.has_image_placeholders = true;
             // The lower 24 bits of the image id are encoded in the foreground
             // color, and the placement id is (optionally) in the underline color.
             cur_img_id_lower24bits = color_to_id(gpu_cell->fg);
             cur_placement_id = color_to_id(gpu_cell->decoration_fg);
+            text_in_cell(cpu_cell, self->text_cache, self->lc);
             // If the char has diacritics, use them as row and column indices.
-            if (cpu_cell->cc_idx[0])
-                cur_img_row = diacritic_to_rowcolumn(cpu_cell->cc_idx[0]);
-            if (cpu_cell->cc_idx[1])
-                cur_img_col = diacritic_to_rowcolumn(cpu_cell->cc_idx[1]);
+            if (self->lc->count > 1 && self->lc->chars[1])
+                cur_img_row = diacritic_to_rowcolumn(self->lc->chars[1]);
+            if (self->lc->count > 2 && self->lc->chars[2])
+                cur_img_col = diacritic_to_rowcolumn(self->lc->chars[2]);
             // The third diacritic is used to encode the higher 8 bits of the
             // image id (optional).
-            if (cpu_cell->cc_idx[2])
-                cur_img_id_higher8bits = diacritic_to_rowcolumn(cpu_cell->cc_idx[2]);
+            if (self->lc->count > 3 && self->lc->chars[3])
+                cur_img_id_higher8bits = diacritic_to_rowcolumn(self->lc->chars[3]);
         }
         // The current run is continued if the lower 24 bits of the image id and
         // the placement id are the same as in the previous cell and everything
@@ -2695,7 +2700,7 @@ screen_render_line_graphics(Screen *self, Line *line, int32_t row) {
                     prev_img_row - 1, run_length, 1, self->cell_size);
             }
             // Start a new run.
-            if (cpu_cell->ch == IMAGE_PLACEHOLDER_CHAR) {
+            if (cell_first_char(cpu_cell, self->text_cache) == IMAGE_PLACEHOLDER_CHAR) {
                 run_length = 1;
                 if (!cur_img_col) cur_img_col = 1;
                 if (!cur_img_row) cur_img_row = 1;
@@ -2753,7 +2758,7 @@ screen_update_cell_data(Screen *self, void *address, FONTS_DATA_HANDLE fonts_dat
             for (index_type y = 0; y < self->lines; y++) {
                 linebuf_init_line(linebuf, y);
                 if (linebuf->line->attrs.has_dirty_text) {
-                    render_line(fonts_data, linebuf->line, y, &self->paused_rendering.cursor, self->disable_ligatures);
+                    render_line(fonts_data, linebuf->line, y, &self->paused_rendering.cursor, self->disable_ligatures, self->lc);
                     screen_render_line_graphics(self, linebuf->line, y);
                     if (linebuf->line->attrs.has_dirty_text && screen_has_marker(self)) mark_text_in_line(self->marker, linebuf->line);
                     linebuf_mark_line_clean(linebuf, y);
@@ -2778,7 +2783,7 @@ screen_update_cell_data(Screen *self, void *address, FONTS_DATA_HANDLE fonts_dat
         // the unicode placeholder was first scanned can alter it.
         screen_render_line_graphics(self, self->historybuf->line, y - self->scrolled_by);
         if (self->historybuf->line->attrs.has_dirty_text) {
-            render_line(fonts_data, self->historybuf->line, lnum, self->cursor, self->disable_ligatures);
+            render_line(fonts_data, self->historybuf->line, lnum, self->cursor, self->disable_ligatures, self->lc);
             if (screen_has_marker(self)) mark_text_in_line(self->marker, self->historybuf->line);
             historybuf_mark_line_clean(self->historybuf, lnum);
         }
@@ -2789,7 +2794,7 @@ screen_update_cell_data(Screen *self, void *address, FONTS_DATA_HANDLE fonts_dat
         linebuf_init_line(self->linebuf, lnum);
         if (self->linebuf->line->attrs.has_dirty_text ||
             (cursor_has_moved && (self->cursor->y == lnum || self->last_rendered.cursor_y == lnum))) {
-            render_line(fonts_data, self->linebuf->line, lnum, self->cursor, self->disable_ligatures);
+            render_line(fonts_data, self->linebuf->line, lnum, self->cursor, self->disable_ligatures, self->lc);
             screen_render_line_graphics(self, self->linebuf->line, y - self->scrolled_by);
             if (self->linebuf->line->attrs.has_dirty_text && screen_has_marker(self)) mark_text_in_line(self->marker, self->linebuf->line);
             if (is_overlay_active && lnum == self->overlay_line.ynum) render_overlay_line(self, self->linebuf->line, fonts_data);
@@ -3030,9 +3035,9 @@ limit_without_trailing_whitespace(const Line *line, index_type limit) {
     if (!limit) return limit;
     if (limit > line->xnum) limit = line->xnum;
     while (limit > 0) {
-        CPUCell *cell = line->cpu_cells + limit - 1;
-        if (cell->cc_idx[0]) break;
-        switch(cell->ch) {
+        const CPUCell *cell = line->cpu_cells + limit - 1;
+        if (cell->ch_is_idx) break;
+        switch(cell->ch_or_idx) {
             case ' ': case '\t': case '\n': case '\r': case 0: break;
             default:
                 return limit;
@@ -3214,13 +3219,13 @@ extend_url(Screen *screen, Line *line, index_type *x, index_type *y, char_type s
             next_line_starts_with_url_chars = line_startswith_url_chars(line, in_hostname);
             has_newline = !line->attrs.is_continued;
             if (next_line_starts_with_url_chars && has_newline && !newlines_allowed) next_line_starts_with_url_chars = false;
-            if (sentinel && next_line_starts_with_url_chars && line->cpu_cells[0].ch == sentinel) next_line_starts_with_url_chars = false;
+            if (sentinel && next_line_starts_with_url_chars && cell_is_char(line->cpu_cells, sentinel)) next_line_starts_with_url_chars = false;
         }
         line = screen_visual_line(screen, *y + 1);
         if (!line) break;
         if (in_hostname) {
             for (last_hostname_char_pos = 0; last_hostname_char_pos < line->xnum; last_hostname_char_pos++) {
-                if (line->cpu_cells[last_hostname_char_pos].ch == '/') {
+                if (cell_is_char(line->cpu_cells + last_hostname_char_pos, '/')) {
                     if (last_hostname_char_pos > 0) last_hostname_char_pos--;
                     else { in_hostname = false; last_hostname_char_pos = line->xnum; }
                     break;
@@ -3233,7 +3238,7 @@ extend_url(Screen *screen, Line *line, index_type *x, index_type *y, char_type s
     }
     if (sentinel && *x == 0 && *y > orig_y) {
         line = screen_visual_line(screen, *y);
-        if (line && line->cpu_cells[0].ch == sentinel) {
+        if (line && cell_is_char(line->cpu_cells, sentinel)) {
             *y -= 1; *x = line->xnum - 1;
         }
     }
@@ -3242,7 +3247,7 @@ extend_url(Screen *screen, Line *line, index_type *x, index_type *y, char_type s
 static char_type
 get_url_sentinel(Line *line, index_type url_start) {
     char_type before = 0, sentinel;
-    if (url_start > 0 && url_start < line->xnum) before = line->cpu_cells[url_start - 1].ch;
+    if (url_start > 0 && url_start < line->xnum) before = cell_first_char(line->cpu_cells + url_start - 1, line->text_cache);
     switch(before) {
         case '"':
         case '\'':
@@ -3289,8 +3294,7 @@ screen_detect_url(Screen *screen, unsigned int x, unsigned int y) {
             sentinel = get_url_sentinel(line, url_start);
             index_type slash_count = 0;
             for (index_type i = url_start; i < line->xnum; i++) {
-                const char_type ch = line->cpu_cells[i].ch;
-                if (ch == '/' && ++slash_count > 2) { last_hostname_char_pos = i - 1; break; }
+                if (cell_is_char(line->cpu_cells + i, '/') && ++slash_count > 2) { last_hostname_char_pos = i - 1; break; }
             }
             url_end = line_url_end_at(line, x, true, sentinel, next_line_starts_with_url_chars, x <= last_hostname_char_pos, last_hostname_char_pos);
         }
@@ -3440,7 +3444,7 @@ render_overlay_line(Screen *self, Line *line, FONTS_DATA_HANDLE fonts_data) {
 #define ol self->overlay_line
     line_save_cells(line, 0, line->xnum, ol.original_line.gpu_cells, ol.original_line.cpu_cells);
     screen_draw_overlay_line(self);
-    render_line(fonts_data, line, ol.ynum, self->cursor, self->disable_ligatures);
+    render_line(fonts_data, line, ol.ynum, self->cursor, self->disable_ligatures, self->lc);
     line_save_cells(line, 0, line->xnum, ol.gpu_cells, ol.cpu_cells);
     line_reset_cells(line, 0, line->xnum, ol.original_line.gpu_cells, ol.original_line.cpu_cells);
     ol.is_dirty = false;
@@ -4026,14 +4030,18 @@ text_for_marked_url(Screen *self, PyObject *args) {
     return text_for_selections(self, &self->url_ranges, ansi, strip_trailing_whitespace);
 }
 
+static bool
+cell_is_blank(const CPUCell *c) {
+    return !cell_has_text(c) || cell_is_char(c, ' ');
+}
 
 bool
 screen_selection_range_for_line(Screen *self, index_type y, index_type *start, index_type *end) {
     if (y >= self->lines) { return false; }
     Line *line = visual_line_(self, y);
     index_type xlimit = line->xnum, xstart = 0;
-    while (xlimit > 0 && CHAR_IS_BLANK(line->cpu_cells[xlimit - 1].ch)) xlimit--;
-    while (xstart < xlimit && CHAR_IS_BLANK(line->cpu_cells[xstart].ch)) xstart++;
+    while (xlimit > 0 && cell_is_blank(line->cpu_cells + xlimit - 1)) xlimit--;
+    while (xstart < xlimit && cell_is_blank(line->cpu_cells + xstart)) xstart++;
     *start = xstart; *end = xlimit > 0 ? xlimit - 1 : 0;
     return true;
 }
@@ -4058,11 +4066,10 @@ is_opt_word_char(char_type ch, bool forward) {
 
 static bool
 is_char_ok_for_word_extension(Line* line, index_type x, bool forward) {
-    char_type ch = line->cpu_cells[x].ch;
+    char_type ch = cell_first_char(line->cpu_cells + x, line->text_cache);
     if (is_word_char(ch) || is_opt_word_char(ch, forward)) return true;
     // pass : from :// so that common URLs are matched
-    if (ch == ':' && x + 2 < line->xnum && line->cpu_cells[x+1].ch == '/' && line->cpu_cells[x+2].ch == '/') return true;
-    return false;
+    return ch == ':' && x + 2 < line->xnum && cell_is_char(line->cpu_cells + x + 1, '/') && cell_is_char(line->cpu_cells + x + 2,  '/');
 }
 
 bool

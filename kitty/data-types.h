@@ -59,6 +59,8 @@ static inline PyObject* Py_XNewRef(PyObject *o) { Py_XINCREF(o); return o; }
 
 typedef unsigned long long id_type;
 typedef uint32_t char_type;
+static_assert(sizeof(Py_UCS4) == sizeof(char_type), "PyUCS4 and char_type dont match");
+#define MAX_CHAR_TYPE_VALUE UINT32_MAX
 typedef uint32_t color_type;
 typedef uint16_t hyperlink_id_type;
 typedef int key_type;
@@ -119,7 +121,6 @@ typedef struct ImageAnchorPosition {
 #define BLANK_CHAR 0
 #define COL_MASK 0xFFFFFFFF
 #define DECORATION_FG_CODE 58
-#define CHAR_IS_BLANK(ch) ((ch) == 32 || (ch) == 0)
 
 // PUA character used as an image placeholder.
 #define IMAGE_PLACEHOLDER_CHAR 0x10EEEE
@@ -197,84 +198,7 @@ typedef struct {
     uint32_t left, top, right, bottom;
 } Region;
 
-typedef union CellAttrs {
-    struct {
-        uint16_t width : 2;
-        uint16_t decoration : 3;
-        uint16_t bold : 1;
-        uint16_t italic : 1;
-        uint16_t reverse : 1;
-        uint16_t strike : 1;
-        uint16_t dim : 1;
-        uint16_t mark : 2;
-        uint16_t next_char_was_wrapped : 1;
-    };
-    uint16_t val;
-} CellAttrs;
-#define MARK_MASK (3u)
-#define WIDTH_MASK (3u)
-#define DECORATION_MASK (7u)
-#define NUM_UNDERLINE_STYLES (5u)
-#define SGR_MASK (~(((CellAttrs){.width=WIDTH_MASK, .mark=MARK_MASK, .next_char_was_wrapped=1}).val))
-
-typedef struct {
-    color_type fg, bg, decoration_fg;
-    sprite_index sprite_x, sprite_y, sprite_z;
-    CellAttrs attrs;
-} GPUCell;
-static_assert(sizeof(GPUCell) == 20, "Fix the ordering of GPUCell");
-
-typedef struct {
-    char_type ch;
-    hyperlink_id_type hyperlink_id;
-    combining_type cc_idx[3];
-} CPUCell;
-static_assert(sizeof(CPUCell) == 12, "Fix the ordering of CPUCell");
-
 typedef enum { UNKNOWN_PROMPT_KIND = 0, PROMPT_START = 1, SECONDARY_PROMPT = 2, OUTPUT_START = 3 } PromptKind;
-typedef union LineAttrs {
-    struct {
-        uint8_t is_continued : 1;
-        uint8_t has_dirty_text : 1;
-        uint8_t has_image_placeholders : 1;
-        PromptKind prompt_kind : 2;
-    };
-    uint8_t val;
-} LineAttrs ;
-
-typedef struct {
-    PyObject_HEAD
-
-    GPUCell *gpu_cells;
-    CPUCell *cpu_cells;
-    index_type xnum, ynum;
-    bool needs_free;
-    LineAttrs attrs;
-} Line;
-
-
-typedef struct {
-    PyObject_HEAD
-
-    GPUCell *gpu_cell_buf;
-    CPUCell *cpu_cell_buf;
-    index_type xnum, ynum, *line_map, *scratch;
-    LineAttrs *line_attrs;
-    Line *line;
-} LineBuf;
-
-typedef struct {
-    GPUCell *gpu_cells;
-    CPUCell *cpu_cells;
-    LineAttrs *line_attrs;
-} HistoryBufSegment;
-
-typedef struct {
-    void *ringbuf;
-    size_t maximum_size;
-    bool rewrap_needed;
-} PagerHistoryBuf;
-
 typedef struct {int x;} *HYPERLINK_POOL_HANDLE;
 typedef struct {
     Py_UCS4 *buf;
@@ -282,16 +206,6 @@ typedef struct {
     HYPERLINK_POOL_HANDLE hyperlink_pool;
     hyperlink_id_type active_hyperlink_id;
 } ANSIBuf;
-
-typedef struct {
-    PyObject_HEAD
-
-    index_type xnum, ynum, num_segments;
-    HistoryBufSegment *segments;
-    PagerHistoryBuf *pagerhist;
-    Line *line;
-    index_type start_of_data, count;
-} HistoryBuf;
 
 typedef struct {
     PyObject_HEAD
@@ -332,6 +246,8 @@ typedef struct TransparentDynamicColor {
 } TransparentDynamicColor;
 
 
+#define MARK_MASK (3u)
+
 typedef struct {
     PyObject_HEAD
 
@@ -369,28 +285,8 @@ typedef struct {FONTS_DATA_HEAD} *FONTS_DATA_HANDLE;
         memmove((array) + (i), (array) + (i) + 1, sizeof((array)[0]) * ((count) - (i))); \
     }}
 
-static inline CellAttrs
-cursor_to_attrs(const Cursor *c, const uint16_t width) {
-    CellAttrs ans = {
-        .width=width, .decoration=c->decoration, .bold=c->bold, .italic=c->italic, .reverse=c->reverse,
-        .strike=c->strikethrough, .dim=c->dim};
-    return ans;
-}
-
-#define cursor_as_gpu_cell(cursor) {.attrs=cursor_to_attrs(cursor, 0), .fg=(cursor->fg & COL_MASK), .bg=(cursor->bg & COL_MASK), .decoration_fg=cursor->decoration_fg & COL_MASK}
-
-static inline void
-attrs_to_cursor(const CellAttrs attrs, Cursor *c) {
-    c->decoration = attrs.decoration; c->bold = attrs.bold;  c->italic = attrs.italic;
-    c->reverse = attrs.reverse; c->strikethrough = attrs.strike; c->dim = attrs.dim;
-}
-
-
 // Global functions
-Line* alloc_line(void);
 Cursor* alloc_cursor(void);
-LineBuf* alloc_linebuf(unsigned int, unsigned int);
-HistoryBuf* alloc_historybuf(unsigned int, unsigned int, unsigned int);
 ColorProfile* alloc_color_profile(void);
 void copy_color_profile(ColorProfile*, ColorProfile*);
 PyObject* parse_bytes_dump(PyObject UNUSED *, PyObject *);
@@ -400,8 +296,6 @@ Cursor* cursor_copy(Cursor*);
 void cursor_copy_to(Cursor *src, Cursor *dest);
 void cursor_reset_display_attrs(Cursor*);
 void cursor_from_sgr(Cursor *self, int *params, unsigned int count, bool is_group);
-void apply_sgr_to_cells(GPUCell *first_cell, unsigned int cell_count, int *params, unsigned int count, bool is_group);
-const char* cell_as_sgr(const GPUCell *, const GPUCell *);
 const char* cursor_as_sgr(const Cursor *);
 
 PyObject* cm_thread_write(PyObject *self, PyObject *args);

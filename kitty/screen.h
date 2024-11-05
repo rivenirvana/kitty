@@ -9,6 +9,8 @@
 #include "vt-parser.h"
 #include "graphics.h"
 #include "monotonic.h"
+#include "line-buf.h"
+#include "history.h"
 
 typedef enum ScrollTypes { SCROLL_LINE = -999999, SCROLL_PAGE, SCROLL_FULL } ScrollType;
 
@@ -103,6 +105,7 @@ typedef struct {
     Cursor *cursor;
     Savepoint main_savepoint, alt_savepoint;
     PyObject *callbacks, *test_child;
+    TextCache *text_cache;
     LineBuf *linebuf, *main_linebuf, *alt_linebuf;
     GraphicsManager *grman, *main_grman, *alt_grman;
     HistoryBuf *historybuf;
@@ -169,6 +172,7 @@ typedef struct {
         Selections selections, url_ranges;
     } paused_rendering;
     CharsetState charset;
+    ListOfChars *lc;
 } Screen;
 
 

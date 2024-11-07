@@ -19,7 +19,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Literal,
     Optional,
     Union,
 )
@@ -36,6 +35,7 @@ from .clipboard import (
     set_clipboard_string,
     set_primary_selection,
 )
+from .colors import ColorSchemes, theme_colors
 from .conf.utils import BadLine, KeyAction, to_cmdline
 from .config import common_opts_as_dict, prepare_config_file_for_editing
 from .constants import (
@@ -92,7 +92,6 @@ from .fast_data_types import (
     monotonic,
     os_window_focus_counters,
     os_window_font_size,
-    patch_global_colors,
     redirect_mouse_handling,
     ring_bell,
     run_with_activation_token,
@@ -118,7 +117,6 @@ from .notifications import NotificationManager
 from .options.types import Options, nullable_colors
 from .options.utils import MINIMUM_FONT_SIZE, KeyboardMode, KeyDefinition
 from .os_window_size import initial_window_size_func
-from .rgb import color_from_int
 from .session import Session, create_sessions, get_os_window_sizing_data
 from .shaders import load_shader_programs
 from .tabs import SpecialWindow, SpecialWindowInstance, Tab, TabDict, TabManager
@@ -2638,27 +2636,6 @@ class Boss:
             window.screen.disable_ligatures = strategy
             window.refresh()
 
-    def patch_colors(self, spec: dict[str, Optional[int]], transparent_background_colors: tuple[tuple[Color, float], ...], configured: bool = False) -> None:
-        opts = get_options()
-        if configured:
-            for k, v in spec.items():
-                if hasattr(opts, k):
-                    if v is None:
-                        if k in nullable_colors:
-                            setattr(opts, k, None)
-                    else:
-                        setattr(opts, k, color_from_int(v))
-            opts.transparent_background_colors = transparent_background_colors
-        for tm in self.all_tab_managers:
-            tm.tab_bar.patch_colors(spec)
-            tm.tab_bar.layout()
-            tm.mark_tab_bar_dirty()
-            t = tm.active_tab
-            if t is not None:
-                t.relayout_borders()
-            set_os_window_chrome(tm.os_window_id)
-        patch_global_colors(spec, configured)
-
     def apply_new_options(self, opts: Options) -> None:
         from .fonts.box_drawing import set_scale
         # Update options storage
@@ -3058,7 +3035,7 @@ class Boss:
         if w is not None:
             output = debug_config(get_options(), self.mappings.global_shortcuts)
             set_clipboard_string(re.sub(r'\x1b.+?m', '', output))
-            output += '\n\x1b[35mThis debug output has been copied to the clipboard\x1b[m'
+            output += '\n\x1b[35mThis debug output has been copied to the clipboard\x1b[m'  # ]]]
             self.display_scrollback(w, output, title=_('Current kitty options'), report_cursor=False)
 
     @ac('misc', 'Discard this event completely ignoring it')
@@ -3069,8 +3046,8 @@ class Boss:
     def sanitize_url_for_dispay_to_user(self, url: str) -> str:
         return sanitize_url_for_dispay_to_user(url)
 
-    def on_system_color_scheme_change(self, appearance: Literal['light', 'dark', 'no_preference']) -> None:
-        log_error('system color theme changed:', appearance)
+    def on_system_color_scheme_change(self, appearance: ColorSchemes, is_initial_value: bool) -> None:
+        theme_colors.on_system_color_scheme_change(appearance, is_initial_value)
 
     @ac('win', '''
         Toggle to the tab matching the specified expression

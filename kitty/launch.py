@@ -423,6 +423,7 @@ def load_watch_modules(watchers: Iterable[str]) -> Optional[Watchers]:
         return None
     import runpy
     ans = Watchers()
+    boss = get_boss()
     for path in watchers:
         path = resolve_custom_file(path)
         m = watcher_modules.get(path, None)
@@ -436,6 +437,14 @@ def load_watch_modules(watchers: Iterable[str]) -> Optional[Watchers]:
                 watcher_modules[path] = False
                 continue
             watcher_modules[path] = m
+            w = m.get('on_load')
+            if callable(w):
+                try:
+                    w(boss, {})
+                except Exception as err:
+                    import traceback
+                    log_error(traceback.format_exc())
+                    log_error(f'Failed to call on_load() in watcher from {path} with error: {err}')
         if m is False:
             continue
         w = m.get('on_close')
@@ -477,7 +486,7 @@ class LaunchKwds(TypedDict):
 
 
 def apply_colors(window: Window, spec: Sequence[str]) -> None:
-    from kitty.rc.set_colors import parse_colors
+    from .colors import parse_colors
     colors, transparent_background_colors = parse_colors(spec)
     profiles = window.screen.color_profile,
     patch_color_profiles(colors, transparent_background_colors, profiles, True)

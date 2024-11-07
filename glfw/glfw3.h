@@ -1429,16 +1429,17 @@ typedef void (* GLFWapplicationclosefun)(int);
  *
  *  This is the function pointer type for system color theme changes.
  *  @code
- *  void function_name(int theme_type)
+ *  void function_name(GLFWColorScheme theme_type, bool is_initial_value)
  *  @endcode
  *
  *  @param[in] theme_type 0 for unknown, 1 for dark and 2 for light
+ *  @param[in] is_initial_value true if this is the initial read of the color theme on systems where it is asynchronous such as Linux
  *
  *  @sa @ref glfwSetSystemColorThemeChangeCallback
  *
  *  @ingroup window
  */
-typedef void (* GLFWsystemcolorthemechangefun)(GLFWColorScheme);
+typedef void (* GLFWsystemcolorthemechangefun)(GLFWColorScheme, bool);
 
 
 /*! @brief The function pointer type for window content refresh callbacks.
@@ -3981,7 +3982,7 @@ GLFWAPI GLFWwindowsizefun glfwSetWindowSizeCallback(GLFWwindow* window, GLFWwind
 GLFWAPI GLFWwindowclosefun glfwSetWindowCloseCallback(GLFWwindow* window, GLFWwindowclosefun callback);
 GLFWAPI GLFWapplicationclosefun glfwSetApplicationCloseCallback(GLFWapplicationclosefun callback);
 GLFWAPI GLFWsystemcolorthemechangefun glfwSetSystemColorThemeChangeCallback(GLFWsystemcolorthemechangefun callback);
-GLFWAPI GLFWColorScheme glfwGetCurrentSystemColorTheme(void);
+GLFWAPI GLFWColorScheme glfwGetCurrentSystemColorTheme(bool query_if_unintialized);
 
 /*! @brief Sets the refresh callback for the specified window.
  *

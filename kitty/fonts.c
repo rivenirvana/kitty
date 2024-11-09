@@ -467,8 +467,8 @@ face_has_codepoint(const void* face, char_type cp) {
 
 static bool
 has_emoji_presentation(const GPUCell *gpu_cell, const ListOfChars *lc) {
-    if (gpu_cell->attrs.width != 2) return false;
-    return lc->count > 1 && is_emoji(lc->chars[0]) && lc->chars[1] != VS15;
+    if (gpu_cell->attrs.width != 2 || !lc->count) return false;
+    return  is_emoji(lc->chars[0]) && (lc->count == 1 || lc->chars[1] != VS15);
 }
 
 bool
@@ -834,7 +834,7 @@ shape(CPUCell *first_cpu_cell, GPUCell *first_gpu_cell, index_type num_cells, hb
     group_state.prev_was_empty = false;
     group_state.current_cell_data.cpu_cell = first_cpu_cell;
     group_state.current_cell_data.gpu_cell = first_gpu_cell;
-    group_state.current_cell_data.num_codepoints = MAX(1, lc.count);
+    group_state.current_cell_data.num_codepoints = MAX(1u, lc.count);
     group_state.current_cell_data.codepoints_consumed = 0;
     group_state.current_cell_data.current_codepoint = lc.chars[0];
     zero_at_ptr_count(group_state.groups, group_state.groups_capacity);

@@ -129,8 +129,8 @@ Recommends:     ripgrep
 # "kittens" functions install separately
 Suggests:       ImageMagick%{?_isa}
 
-Provides:       bundled(font(SymbolsNerdFontMono)) = 3.2.1
-Provides:       bundled(font(SymbolsNerdFont)) = 3.2.1
+Provides:       bundled(font(SymbolsNerdFontMono)) = 3.3.0
+Provides:       bundled(font(SymbolsNerdFont)) = 3.3.0
 
 Provides:       bundled(Verstable) = 2.1.1
 # modified version of https://github.com/dhess/c-ringbuf

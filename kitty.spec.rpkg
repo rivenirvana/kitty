@@ -10,8 +10,8 @@
 %global goipath kitty
 
 Name:           {{{ git_name }}}
-Version:        {{{ git_version }}}
-Release:        {{{ git_release }}}%{?dist}
+Version:        {{{ git_custom_version }}}
+Release:        {{{ git_custom_release }}}%{?dist}
 Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 
 # GPL-3.0-only: kitty
@@ -369,5 +369,5 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 
 
 %changelog
-* {{{ git_changelog_date }}} Arvin Verain <arvinverain@proton.me> - {{{ git_version }}}-{{{ git_release }}}
+* {{{ git_custom_date }}} Arvin Verain <arvinverain@proton.me> - {{{ git_custom_version }}}-{{{ git_custom_release }}}
 - Nightly build from git master

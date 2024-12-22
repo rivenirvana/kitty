@@ -16,8 +16,8 @@ function git_log_tag {
     output "$changelog_version"
 }
 
-function git_version {
-    cached git_version && return
+function git_custom_version {
+    cached git_custom_version && return
 
     declare version label
     read version label <<<"$(git_log_tag)"
@@ -33,8 +33,8 @@ function git_version {
     output "${version}.${affix}.${commits}${hash}"
 }
 
-function git_release {
-    cached git_release && return
+function git_custom_release {
+    cached git_custom_release && return
 
     # find last merge
     declare last_merge rest
@@ -49,7 +49,7 @@ function git_release {
     output "$release"
 }
 
-function git_changelog_date {
-    cached git_changelog_date && return
+function git_custom_date {
+    cached git_custom_date && return
     output "$(date +'%a %b %d %Y')"
 }

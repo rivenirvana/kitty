@@ -9,9 +9,9 @@
 
 %global goipath kitty
 
-Name:           {{{ git_name }}}
-Version:        {{{ git_custom_version }}}
-Release:        {{{ git_custom_release }}}%{?dist}
+Name:           {{{git_name}}}
+Version:        {{{git_custom_version}}}
+Release:        {{{git_custom_release}}}%{?dist}
 Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 
 # GPL-3.0-only: kitty
@@ -50,7 +50,7 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # github.com/rwcarlsen/goexif: BSD-2-Clause
 License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND (MIT AND CC0-1.0) AND BSD-2-Clause AND CC0-1.0 AND MIT
 URL:            https://sw.kovidgoyal.net/kitty
-Source0:        {{{ git_repo_pack }}}
+Source0:        {{{git_repo_pack}}}
 # git clone https://github.com/kovidgoyal/kitty.git
 # cd kitty
 # git checkout v%%{version}
@@ -220,7 +220,7 @@ This package contains the documentation for %{name}.
 
 
 %prep
-{{{ git_repo_setup_macro }}}
+{{{git_repo_setup_macro}}}
 
 mkdir fonts
 tar -xf %{SOURCE2} -C fonts
@@ -369,5 +369,5 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 
 
 %changelog
-* {{{ git_custom_date }}} Arvin Verain <arvinverain@proton.me> - {{{ git_custom_version }}}-{{{ git_custom_release }}}
+* {{{git_custom_date}}} Arvin Verain <arvinverain@proton.me> - {{{git_custom_version}}}-{{{git_custom_release}}}
 - Nightly build from git master

@@ -220,7 +220,7 @@ This package contains the documentation for %{name}.
 
 
 %prep
-{{{git_setup_macro path="$GIT_ROOT"}}}
+{{{git_repo_setup_macro}}}
 
 mkdir fonts
 tar -xf %{SOURCE2} -C fonts

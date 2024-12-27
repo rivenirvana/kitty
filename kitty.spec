@@ -50,7 +50,7 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # github.com/rwcarlsen/goexif: BSD-2-Clause
 License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND (MIT AND CC0-1.0) AND BSD-2-Clause AND CC0-1.0 AND MIT
 URL:            https://sw.kovidgoyal.net/kitty
-Source0:        {{{git_repo_pack}}}
+Source0:        {{{git_repo_archive}}}
 # git clone https://github.com/kovidgoyal/kitty.git
 # cd kitty
 # git checkout v%%{version}

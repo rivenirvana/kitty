@@ -20,11 +20,11 @@ function git_custom_version {
     cached git_custom_version && return
 
     declare version label
-    read version label <<<"$(git_log_tag)"
+    read -r version label <<<"$(git_log_tag)"
 
     declare describe tag commits hash affix
     describe=$(git describe --first-parent origin/master)
-    read tag commits hash <<<"${describe//-/ }"
+    read -r tag commits hash <<<"${describe//-/ }"
 
     [[ "${label}" == '[future]' ]] && affix='future' || affix='stable'
     [[ -z "${commits}" ]] && commits=0
@@ -38,7 +38,7 @@ function git_custom_release {
 
     # find last merge
     declare last_merge rest
-    read last_merge rest <<<"$(git log --merges --oneline -n1)"
+    read -r last_merge rest <<<"$(git log --merges --oneline -n1)"
     [[ -n $last_merge ]] || abort "failed to find last merge"
 
     # count commits since last merge; might be zero

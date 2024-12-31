@@ -9,7 +9,7 @@
 
 %global goipath kitty
 
-Name:           {{{git_name}}}
+Name:           kitty
 Version:        {{{git_custom_version}}}
 Release:        {{{git_custom_release}}}%{?dist}
 Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
@@ -66,10 +66,14 @@ Source2:        https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
-BuildRequires:  git
+%if 0%{?fedora} == 40
+BuildRequires:  golang >= 1.22.0
+%else
 BuildRequires:  golang >= 1.23.0
+%endif
 BuildRequires:  go-rpm-macros
 
+BuildRequires:  git
 BuildRequires:  gnupg2
 BuildRequires:  desktop-file-utils
 BuildRequires:  gcc
@@ -221,6 +225,10 @@ This package contains the documentation for %{name}.
 
 %prep
 {{{git_repo_setup_macro}}}
+
+%if 0%{?fedora} == 40
+sed 's/go 1\.23/go 1.22/' -i go.mod
+%endif
 
 mkdir fonts
 tar -xf %{SOURCE2} -C fonts

@@ -607,7 +607,7 @@ class Options:
     tab_separator: str = ' ┇'
     tab_switch_strategy: choices_for_tab_switch_strategy = 'previous'
     tab_title_max_length: int = 0
-    tab_title_template: str = '{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{title}'
+    tab_title_template: str = '{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{tab.last_focused_progress_percent}{title}'
     term: str = 'xterm-kitty'
     terminfo_type: choices_for_terminfo_type = 'path'
     text_composition_strategy: str = 'platform'
@@ -970,6 +970,8 @@ if is_macos:
     defaults.map.append(KeyDefinition(trigger=SingleKey(mods=8, key=44), definition='edit_config_file'))
     defaults.map.append(KeyDefinition(trigger=SingleKey(mods=10, key=114), definition='clear_terminal reset active'))
     defaults.map.append(KeyDefinition(trigger=SingleKey(mods=8, key=107), definition='clear_terminal to_cursor active'))
+    defaults.map.append(KeyDefinition(trigger=SingleKey(mods=10, key=107), definition='clear_terminal scrollback active'))
+    defaults.map.append(KeyDefinition(trigger=SingleKey(mods=12, key=108), definition='clear_terminal to_cursor_scroll active'))
     defaults.map.append(KeyDefinition(trigger=SingleKey(mods=12, key=44), definition='load_config_file'))
     defaults.map.append(KeyDefinition(trigger=SingleKey(mods=10, key=44), definition='debug_config'))
     defaults.map.append(KeyDefinition(trigger=SingleKey(mods=9, key=47), definition='open_url https://sw.kovidgoyal.net/kitty/'))
@@ -1039,6 +1041,7 @@ defaults.mouse_map = [
     MouseMapping(button=1, mods=5, definition='mouse_show_command_output'),
 ]
 
+
 nullable_colors = frozenset({
     'cursor'
     'cursor_text_color'
@@ -1049,3 +1052,6 @@ nullable_colors = frozenset({
     'selection_foreground'
     'selection_background'
 })
+
+
+secret_options = ('remote_control_password', 'file_transfer_confirmation_bypass')

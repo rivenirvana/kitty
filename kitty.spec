@@ -43,7 +43,7 @@ BuildRequires:  gcc
 BuildRequires:  lcms2-devel
 BuildRequires:  libappstream-glib
 BuildRequires:  ncurses
-BuildRequires:  python3-devel >= 3.8
+BuildRequires:  python3-devel >= 3.10
 BuildRequires:  wayland-devel
 BuildRequires:  simde-static
 

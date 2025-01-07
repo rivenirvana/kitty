@@ -190,12 +190,13 @@ This package contains the documentation for %{name}.
 
 %prep
 {{{git_repo_setup_macro}}}
-go_vendor_archive create --config go-vendor-tools.toml . -O kitty-vendor.tar.xz
-tar -xf kitty-vendor.tar.xz
 
 %if 0%{?fedora} == 40
 sed 's/go 1\.23/go 1.22/' -i go.mod
 %endif
+
+go_vendor_archive create --config go-vendor-tools.toml . -O kitty-vendor.tar.xz
+tar -xf kitty-vendor.tar.xz
 
 mkdir fonts
 tar -xf %{SOURCE6} -C fonts

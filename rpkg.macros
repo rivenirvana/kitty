@@ -23,7 +23,7 @@ function git_custom_version {
     read -r version label <<<"$(git_log_tag)"
 
     declare describe tag commits hash affix
-    describe=$(git describe --first-parent origin/master)
+    describe=$(git describe --always --long --first-parent --abbrev=7 --exclude=nightly origin/master)
     read -r tag commits hash <<<"${describe//-/ }"
 
     [[ "${label}" == '[future]' ]] && affix='future' || affix='stable'

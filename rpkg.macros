@@ -28,7 +28,7 @@ function git_custom_version {
 
     [[ "${label}" == '[future]' ]] && affix='future' || affix='stable'
     [[ -z "${commits}" ]] && commits=0
-    [[ -n "${hash}" ]] && hash=".${hash}"
+    [[ -n "${hash}" ]] && hash=".${hash:1}"
 
     output "${version}.${affix}.${commits}${hash}"
 }

@@ -164,10 +164,10 @@ def detach_tab_parse(func: str, rest: str) -> FuncArgsType:
 
 @func_with_args(
     'set_background_opacity', 'goto_layout', 'toggle_layout', 'toggle_tab', 'kitty_shell', 'show_kitty_doc',
-    'set_tab_title', 'push_keyboard_mode', 'dump_lines_with_attrs',
+    'set_tab_title', 'push_keyboard_mode', 'dump_lines_with_attrs', 'set_window_title',
 )
 def simple_parse(func: str, rest: str) -> FuncArgsType:
-    return func, [rest]
+    return func, (rest,)
 
 
 @func_with_args('set_font_size')

@@ -363,8 +363,13 @@ found:
 }
 
 static bool
+linebuf_is_line_continued(LineBuf *linebuf, index_type y) {
+    return y ? linebuf_line_ends_with_continuation(linebuf, y - 1) : false;
+}
+
+static bool
 preserve_blank_output_start_line(Cursor *cursor, LineBuf *linebuf) {
-    if (cursor->x == 0 && cursor->y < linebuf->ynum && !linebuf->line_attrs[cursor->y].is_continued) {
+    if (cursor->x == 0 && cursor->y < linebuf->ynum && !linebuf_is_line_continued(linebuf, cursor->y)) {
         linebuf_init_line(linebuf, cursor->y);
         if (!cell_has_text(linebuf->line->cpu_cells)) {
             // we have a blank output start line, we need it to be preserved by
@@ -588,10 +593,7 @@ selection_intersects_screen_lines(const Selections *selections, int a, int b) {
 
 static void
 init_text_loop_line(Screen *self, text_loop_state *s) {
-    if (self->modes.mIRM) {
-        linebuf_init_line(self->linebuf, self->cursor->y);
-        s->cp = self->linebuf->line->cpu_cells; s->gp = self->linebuf->line->gpu_cells;
-    } else linebuf_init_cells(self->linebuf, self->cursor->y, &s->cp, &s->gp);
+    linebuf_init_cells(self->linebuf, self->cursor->y, &s->cp, &s->gp);
     if (selection_has_screen_line(&self->selections, self->cursor->y)) clear_selection(&self->selections);
     linebuf_mark_line_dirty(self->linebuf, self->cursor->y);
     s->image_placeholder_marked = false;
@@ -605,9 +607,6 @@ typedef Line*(linefunc_t)(Screen*, int);
 static void
 init_line_(Screen *self, index_type y, Line *line) {
     linebuf_init_line_at(self->linebuf, y, line);
-    if (y == 0 && self->linebuf == self->main_linebuf) {
-        if (history_buf_endswith_wrap(self->historybuf)) line->attrs.is_continued = true;
-    }
 }
 
 
@@ -643,6 +642,17 @@ visual_line_(Screen *self, int y_) {
     return init_line(self, y);
 }
 
+static bool
+visual_line_is_continued(Screen *self, int y_) {
+    index_type y = MAX(0, y_);
+    if (self->scrolled_by) {
+        if (y < self->scrolled_by) return historybuf_is_line_continued(self->historybuf, self->scrolled_by - 1 - y);
+        y -= self->scrolled_by;
+    }
+    if (y) return linebuf_is_line_continued(self->linebuf, y);
+    return self->linebuf == self->main_linebuf ? history_buf_endswith_wrap(self->historybuf) : false;
+}
+
 static Line*
 range_line_(Screen *self, int y) {
     if (y < 0) {
@@ -658,13 +668,21 @@ range_line(Screen *self, int y, Line *line) {
     else init_line_(self, y, line);
 }
 
-
 static Line*
 checked_range_line(Screen *self, int y) {
     if (
         (y < 0 && -(y + 1) >= (int)self->historybuf->count) || y >= (int)self->lines
     ) return NULL;
     return range_line_(self, y);
+}
+
+static bool
+range_line_is_continued(Screen *self, int y) {
+    if (
+        (y < 0 && -(y + 1) >= (int)self->historybuf->count) || y >= (int)self->lines
+    ) return false;
+    if (y < 0) return historybuf_is_line_continued(self->historybuf, -(y + 1));
+    return visual_line_is_continued(self, y);
 }
 
 static void
@@ -967,11 +985,6 @@ screen_on_input(Screen *self) {
     }
 }
 
-static bool
-ts_cursor_on_multicell(Screen *self, text_loop_state *s) {
-    return self->cursor->x < self->columns && s->cp[self->cursor->x].is_multicell;
-}
-
 static void
 replace_multicell_char_under_cursor_with_spaces(Screen *self) {
     nuke_multicell_char_at(self, self->cursor->x, self->cursor->y, true);
@@ -1026,7 +1039,7 @@ draw_control_char(Screen *self, text_loop_state *s, uint32_t ch) {
                     init_text_loop_line(self, s);
                 } else if (self->columns > 0){
                     self->cursor->x = self->columns - 1;
-                    if (ts_cursor_on_multicell(self, s)) {
+                    if (s->cp[self->cursor->x].is_multicell) {
                         if (s->cp[self->cursor->x].y) move_cursor_past_multicell(self, 1);
                         else replace_multicell_char_under_cursor_with_spaces(self);
                     }
@@ -1058,7 +1071,7 @@ draw_text_loop(Screen *self, const uint32_t *chars, size_t num_chars, text_loop_
             draw_control_char(self, s, ch);
             continue;
         }
-        if (ts_cursor_on_multicell(self, s) && !is_combining_char(ch)) {
+        if (self->cursor->x < self->columns && s->cp[self->cursor->x].is_multicell && !is_combining_char(ch)) {
             if (s->cp[self->cursor->x].y) {
                 move_cursor_past_multicell(self, 1);
                 init_text_loop_line(self, s);
@@ -3721,7 +3734,7 @@ extend_url(Screen *screen, Line *line, index_type *x, index_type *y, char_type s
         line = screen_visual_line(screen, *y + 2 * scale);
         if (line) {
             next_line_starts_with_url_chars = line_startswith_url_chars(line, in_hostname, screen->lc);
-            has_newline = !line->attrs.is_continued;
+            has_newline = !visual_line_is_continued(screen, *y + 2 * scale);
             if (next_line_starts_with_url_chars && has_newline && !newlines_allowed) next_line_starts_with_url_chars = false;
             if (sentinel && next_line_starts_with_url_chars && cell_is_char(line->cpu_cells, sentinel)) next_line_starts_with_url_chars = false;
         }
@@ -3777,7 +3790,7 @@ screen_detect_url(Screen *screen, unsigned int x, unsigned int y) {
         if (y + scale < screen->lines) {
             visual_line(screen, y + scale, &scratch);
             next_line_starts_with_url_chars = line_startswith_url_chars(&scratch, last_hostname_char_pos >= line->xnum, screen->lc);
-            if (next_line_starts_with_url_chars && !newlines_allowed && !scratch.attrs.is_continued) next_line_starts_with_url_chars = false;
+            if (next_line_starts_with_url_chars && !newlines_allowed && !visual_line_is_continued(screen, y + scale)) next_line_starts_with_url_chars = false;
         }
         sentinel = get_url_sentinel(line, url_start);
         last_hostname_char_pos = get_last_hostname_char_pos(line, url_start);
@@ -4050,7 +4063,7 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
             found_prompt = true;
             // change direction to downwards to find command output
             direction = 1;
-        } else if (line && line->attrs.prompt_kind == OUTPUT_START && !line->attrs.is_continued) {
+        } else if (line && line->attrs.prompt_kind == OUTPUT_START && !range_line_is_continued(self, y1)) {
             found_output = true; start = y1;
             found_prompt = true;
             // keep finding the first output start upwards
@@ -4064,14 +4077,14 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
         // find upwards: find prompt after the output, and the first output
         while (y1 >= upward_limit) {
             line = checked_range_line(self, y1);
-            if (line && line->attrs.prompt_kind == PROMPT_START && !line->attrs.is_continued) {
+            if (line && line->attrs.prompt_kind == PROMPT_START && !range_line_is_continued(self, y1)) {
                 if (direction == 0) {
                     // find around: stop at prompt start
                     start = y1 + 1;
                     break;
                 }
                 found_next_prompt = true; end = y1;
-            } else if (line && line->attrs.prompt_kind == OUTPUT_START && !line->attrs.is_continued) {
+            } else if (line && line->attrs.prompt_kind == OUTPUT_START && !range_line_is_continued(self, y1)) {
                 start = y1;
                 break;
             }
@@ -4142,7 +4155,7 @@ cmd_output(Screen *self, PyObject *args) {
             bool reached_upper_limit = false;
             while (!found && !reached_upper_limit) {
                 line = checked_range_line(self, y);
-                if (!line || (line->attrs.prompt_kind == OUTPUT_START && !line->attrs.is_continued)) {
+                if (!line || (line->attrs.prompt_kind == OUTPUT_START && !range_line_is_continued(self, y))) {
                     int start = line ? y : y + 1; reached_upper_limit = !line;
                     int y2 = start; unsigned int num_lines = 0;
                     bool found_content = false;
@@ -4584,7 +4597,7 @@ screen_selection_range_for_word(Screen *self, const index_type x, const index_ty
     start = x; end = x;
     while(true) {
         while(start > 0 && is_ok(start - 1, false)) start--;
-        if (start > 0 || !line->attrs.is_continued || *y1 == 0) break;
+        if (start > 0 || !visual_line_is_continued(self, y) || *y1 == 0) break;
         line = visual_line_(self, *y1 - 1);
         if (!is_ok(self->columns - 1, false)) break;
         (*y1)--; start = self->columns - 1;
@@ -4594,7 +4607,7 @@ screen_selection_range_for_word(Screen *self, const index_type x, const index_ty
         while(end < self->columns - 1 && is_ok(end + 1, true)) end++;
         if (end < self->columns - 1 || *y2 >= self->lines - 1) break;
         line = visual_line_(self, *y2 + 1);
-        if (!line->attrs.is_continued || !is_ok(0, true)) break;
+        if (!visual_line_is_continued(self, *y2 + 1) || !is_ok(0, true)) break;
         (*y2)++; end = 0;
     }
     *s = start; *e = end;
@@ -4771,7 +4784,7 @@ screen_mark_hyperlink(Screen *self, index_type x, index_type y) {
 
 static index_type
 continue_line_upwards(Screen *self, index_type top_line, SelectionBoundary *start, SelectionBoundary *end) {
-    while (top_line > 0 && visual_line_(self, top_line)->attrs.is_continued) {
+    while (top_line > 0 && visual_line_is_continued(self, top_line)) {
         if (!screen_selection_range_for_line(self, top_line - 1, &start->x, &end->x)) break;
         top_line--;
     }
@@ -4780,7 +4793,7 @@ continue_line_upwards(Screen *self, index_type top_line, SelectionBoundary *star
 
 static index_type
 continue_line_downwards(Screen *self, index_type bottom_line, SelectionBoundary *start, SelectionBoundary *end) {
-    while (bottom_line < self->lines - 1 && visual_line_(self, bottom_line + 1)->attrs.is_continued) {
+    while (bottom_line + 1 < self->lines && visual_line_is_continued(self, bottom_line + 1)) {
         if (!screen_selection_range_for_line(self, bottom_line + 1, &start->x, &end->x)) break;
         bottom_line++;
     }
@@ -5244,7 +5257,7 @@ dump_line_with_attrs(Screen *self, int y, PyObject *accum) {
         case SECONDARY_PROMPT: call_string("\x1b[32msecondary_prompt \x1b[39m"); break;
         case OUTPUT_START: call_string("\x1b[33moutput \x1b[39m"); break;
     }
-    if (line->attrs.is_continued) call_string("continued ");
+    if (range_line_is_continued(self, y)) call_string("continued ");
     if (line->attrs.has_dirty_text) call_string("dirty ");
     call_string("\n");
     RAII_PyObject(t, line_as_unicode(line, false, &self->as_ansi_buf)); if (!t) return;

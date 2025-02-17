@@ -40,7 +40,7 @@ typedef struct RunFont {
 
 static hb_buffer_t *harfbuzz_buffer = NULL;
 static hb_feature_t hb_features[3] = {{0}};
-static char_type shape_buffer[4096] = {0};
+static struct { char_type *codepoints; size_t capacity; } shape_buffer = {0};
 static size_t max_texture_size = 1024, max_array_len = 1024;
 typedef enum { LIGA_FEATURE, DLIG_FEATURE, CALT_FEATURE } HBFeature;
 
@@ -1102,19 +1102,20 @@ render_box_cell(FontGroup *fg, RunFont rf, CPUCell *cpu_cell, GPUCell *gpu_cell,
 }
 
 static void
-load_hb_buffer(CPUCell *first_cpu_cell, GPUCell *first_gpu_cell, index_type num_cells, const TextCache *tc, ListOfChars *lc) {
-    index_type num;
+load_hb_buffer(CPUCell *first_cpu_cell, index_type num_cells, const TextCache *tc, ListOfChars *lc) {
+    size_t num = 0;
     hb_buffer_clear_contents(harfbuzz_buffer);
-    while (num_cells) {
-        for (num = 0; num_cells; first_cpu_cell++, first_gpu_cell++, num_cells--) {
-            text_in_cell(first_cpu_cell, tc, lc);
-            if (first_cpu_cell->is_multicell && first_cpu_cell->x) continue;
-            if (lc->count + num > arraysz(shape_buffer)) break;
-            memcpy(shape_buffer + num, lc->chars, lc->count * sizeof(shape_buffer[0]));
-            num += lc->count;
-        }
-        hb_buffer_add_utf32(harfbuzz_buffer, shape_buffer, num, 0, num);
+    // Although hb_buffer_add_codepoints is supposedly an append, we have to
+    // add all text in one call otherwise it breaks shaping, presumably because
+    // of context??
+    for (; num_cells; first_cpu_cell++, num_cells--) {
+        if (first_cpu_cell->is_multicell && first_cpu_cell->x) continue;
+        text_in_cell(first_cpu_cell, tc, lc);
+        ensure_space_for((&shape_buffer), codepoints, char_type, lc->count + num, capacity, 512, false);
+        memcpy(shape_buffer.codepoints + num, lc->chars, lc->count * sizeof(shape_buffer.codepoints[0]));
+        num += lc->count;
     }
+    hb_buffer_add_codepoints(harfbuzz_buffer, shape_buffer.codepoints, num, 0, num);
     hb_buffer_guess_segment_properties(harfbuzz_buffer);
     if (OPT(force_ltr)) hb_buffer_set_direction(harfbuzz_buffer, HB_DIRECTION_LTR);
 }
@@ -1273,7 +1274,7 @@ shape(CPUCell *first_cpu_cell, GPUCell *first_gpu_cell, index_type num_cells, hb
     group_state.first_gpu_cell = first_gpu_cell;
     group_state.last_cpu_cell = first_cpu_cell + (num_cells ? num_cells - 1 : 0);
     group_state.last_gpu_cell = first_gpu_cell + (num_cells ? num_cells - 1 : 0);
-    load_hb_buffer(first_cpu_cell, first_gpu_cell, num_cells, tc, &lc);
+    load_hb_buffer(first_cpu_cell, num_cells, tc, &lc);
 
     size_t num_features = fobj->num_ffs_hb_features;
     if (num_features && !disable_ligature) num_features--;  // the last feature is always -calt
@@ -2057,6 +2058,7 @@ finalize(void) {
     free(global_glyph_render_scratch.sprite_positions);
     if (global_glyph_render_scratch.lc) { cleanup_list_of_chars(global_glyph_render_scratch.lc); free(global_glyph_render_scratch.lc); }
     global_glyph_render_scratch = (GlyphRenderScratch){0};
+    free(shape_buffer.codepoints); zero_at_ptr(&shape_buffer);
 }
 
 static PyObject*

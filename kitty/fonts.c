@@ -179,7 +179,7 @@ ensure_canvas_can_fit(FontGroup *fg, unsigned cells, unsigned scale) {
     size_in_bytes = (sizeof(fg->canvas.alpha_mask[0]) * SUPERSAMPLE_FACTOR * SUPERSAMPLE_FACTOR * 2 * fg->fcm.cell_width * fg->fcm.cell_height * scale * scale);
     if (size_in_bytes > fg->canvas.alpha_mask_sz_in_bytes) {
         fg->canvas.alpha_mask_sz_in_bytes = size_in_bytes;
-        fg->canvas.alpha_mask = malloc(fg->canvas.alpha_mask_sz_in_bytes * sizeof(fg->canvas.alpha_mask[0]));
+        fg->canvas.alpha_mask = malloc(fg->canvas.alpha_mask_sz_in_bytes);
         if (!fg->canvas.alpha_mask) fatal("Out of memory allocating canvas");
     }
 }
@@ -837,7 +837,7 @@ effective_scale(RunFont rf) {
 
 static float
 scaled_cell_dimensions(RunFont rf, unsigned *width, unsigned *height) {
-    float frac = effective_scale(rf);
+    float frac = MAX(effective_scale(rf), MIN(4.f, (float)*width) / *width);
     *width = (unsigned)ceilf(frac * *width);
     *height = (unsigned)ceilf(frac * *height);
     return frac;
@@ -1053,11 +1053,12 @@ render_box_cell(FontGroup *fg, RunFont rf, CPUCell *cpu_cell, GPUCell *gpu_cell,
         return;
     }
     float scale = apply_scale_to_font_group(fg, &rf);
+    ensure_canvas_can_fit(fg, num_glyphs + 1, rf.scale);
     FontCellMetrics scaled_metrics = fg->fcm;
     unsigned width = fg->fcm.cell_width, height = fg->fcm.cell_height;
     if (scale != 1) apply_scale_to_font_group(fg, NULL);
     uint8_t *alpha_mask = NULL;
-    ensure_canvas_can_fit(fg, num_glyphs + 1, rf.scale);
+    ensure_canvas_can_fit(fg, num_glyphs + 1, rf.scale);  // in case size is larger scale is larger
     if (num_glyphs == 1) {
         render_box_char(ch, fg->canvas.alpha_mask, width, height, fg->logical_dpi_x, fg->logical_dpi_y, scale);
         alpha_mask = fg->canvas.alpha_mask;
@@ -1111,7 +1112,7 @@ load_hb_buffer(CPUCell *first_cpu_cell, index_type num_cells, const TextCache *t
     for (; num_cells; first_cpu_cell++, num_cells--) {
         if (first_cpu_cell->is_multicell && first_cpu_cell->x) continue;
         text_in_cell(first_cpu_cell, tc, lc);
-        ensure_space_for((&shape_buffer), codepoints, char_type, lc->count + num, capacity, 512, false);
+        ensure_space_for((&shape_buffer), codepoints, shape_buffer.codepoints[0], lc->count + num, capacity, 512, false);
         memcpy(shape_buffer.codepoints + num, lc->chars, lc->count * sizeof(shape_buffer.codepoints[0]));
         num += lc->count;
     }

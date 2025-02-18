@@ -633,8 +633,10 @@ class TestScreen(BaseTest):
 
         expected = ''.join(('55555', '\n66666', '\n77777', '\n88888', '\n99999'))
         self.ae(ts(), expected)
+        self.ae(ts(True), expected)
         s.scroll(2, True)
         self.ae(ts(), expected)
+        self.ae(ts(True), expected)
         s.reset()
         s.draw('ab   cd')
         s.start_selection(0, 0)
@@ -1190,6 +1192,14 @@ class TestScreen(BaseTest):
             a = []
             s.cmd_output(2, a.append)
             return ''.join(a)
+
+        s = self.create_screen(cols=5, lines=5, scrollback=15)
+        draw_prompt('P' * s.columns)
+        draw_output(s.lines + 1, 'a')  # ensure prompt is in scrollback
+        draw_prompt('Q' * s.columns)
+        draw_output(s.lines + 1, 'b')  # ensure prompt is in scrollback
+        draw_prompt('R' * s.columns)
+        self.ae(lco(), '0b\n1b\n2b\n3b\n4b\n5b')
 
         s = self.create_screen()
         s.draw('abcd'), s.index(), s.carriage_return()

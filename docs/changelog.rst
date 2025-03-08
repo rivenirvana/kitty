@@ -141,6 +141,10 @@ Detailed list of changes
 
 - macOS: notify kitten: Fix waiting for result from desktop notification not working (:disc:`8379`)
 
+- Wayland: Fix mouse pointer position update not being sent when focus regained (:iss`8397`, :iss:`8398`)
+
+- Fix cursor blink animation when :opt:`background_opacity` is less than one (:iss:`8401`)
+
 
 0.39.1 [2025-02-01]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -94,7 +94,6 @@ pointerHandleEnter(
         window->wl.hovered = true;
         window->wl.cursorPosX = x;
         window->wl.cursorPosY = y;
-
         _glfwPlatformSetCursor(window, window->wl.currentCursor);
         _glfwInputCursorEnter(window, true);
     }

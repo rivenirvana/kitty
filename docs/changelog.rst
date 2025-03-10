@@ -94,7 +94,15 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.40.0 [future]
+0.40.1 [future]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Do not count background processes by default for :opt:`confirm_os_window_close` (:iss:`8358`)
+
+- Fix flickering of hyperlink underline when client program continuously
+  redraws on mouse movement (:iss:`8414`)
+
+0.40.0 [2025-03-08]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - :doc:`Allow terminal programs to use text in different font sizes <text-sizing-protocol>` (:iss:`8226`)
@@ -144,6 +152,9 @@ Detailed list of changes
 - Wayland: Fix mouse pointer position update not being sent when focus regained (:iss`8397`, :iss:`8398`)
 
 - Fix cursor blink animation when :opt:`background_opacity` is less than one (:iss:`8401`)
+
+- Wayland: panel kitten: Add a :code:`center` mode for creating panels to ease
+  creation of centered popups in Wayland (:pull:`8411`)
 
 
 0.39.1 [2025-02-01]

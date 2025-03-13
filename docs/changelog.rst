@@ -99,12 +99,18 @@ Detailed list of changes
 
 - Do not count background processes by default for :opt:`confirm_os_window_close` (:iss:`8358`)
 
+- A new option :opt:`clear_selection_on_clipboard_loss` to clear selections when they no longer reflect the contents of the clipboard
+
+- Fix a regression in the previous release that caused empty lines to be skipped when copying text from a selection (:iss:`8435`)
+
 - Fix flickering of hyperlink underline when client program continuously
   redraws on mouse movement (:iss:`8414`)
 
 - Wayland: Allow overriding the kitty OS Window icon on compositors that implement the xdg-toplevel-icon protocol
 
 - macOS: When the program running in kitty reports progress information for a task, show a progress bar on the kitty dock icon
+
+- macOS: Fix a regression causing a crash when using :opt:`focus_follows_mouse` (:iss:`8437`)
 
 0.40.0 [2025-03-08]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

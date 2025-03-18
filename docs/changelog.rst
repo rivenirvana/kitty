@@ -94,7 +94,7 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.40.1 [future]
+0.40.1 [2025-03-18]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Do not count background processes by default for :opt:`confirm_os_window_close` (:iss:`8358`)
@@ -111,6 +111,8 @@ Detailed list of changes
 - macOS: When the program running in kitty reports progress information for a task, show a progress bar on the kitty dock icon
 
 - macOS: Fix a regression causing a crash when using :opt:`focus_follows_mouse` (:iss:`8437`)
+
+- OSC 52: Fix specifying both clipboard and primary in OSC 52 requests not supported
 
 0.40.0 [2025-03-08]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

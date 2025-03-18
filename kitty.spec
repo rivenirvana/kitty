@@ -1,10 +1,10 @@
 %global gomodulesmode GO111MODULE=on
 %global goipath kitty
 
-%ifarch ppc64le s390x
-%bcond test 0
-%else
+%ifarch %{x86_64} %{arm64}
 %bcond test 1
+%else
+%bcond test 0
 %endif
 
 Name:           kitty
@@ -33,7 +33,7 @@ Source6:        https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
-BuildRequires:  golang >= 1.22.0
+BuildRequires:  golang >= 1.23.0
 BuildRequires:  go-rpm-macros
 BuildRequires:  go-vendor-tools
 

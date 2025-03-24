@@ -327,37 +327,6 @@ def create_header(path: str, include_data_types: bool = True) -> Generator[Calla
             p('END_ALLOW_CASE_RANGE')
 
 
-def gen_emoji() -> None:
-    with create_header('kitty/emoji.h') as p:
-        p('static inline bool\nis_emoji(char_type code) {')
-        p('\tswitch(code) {')
-        for spec in get_ranges(list(all_emoji)):
-            write_case(spec, p)
-            p('\t\t\treturn true;')
-        p('\t\tdefault: return false;')
-        p('\t}')
-        p('\treturn false;\n}')
-
-        p('static inline bool\nis_symbol(char_type code) {')
-        p('\tswitch(code) {')
-        for spec in get_ranges(list(all_symbols)):
-            write_case(spec, p)
-            p('\t\t\treturn true;')
-        p('\t\tdefault: return false;')
-        p('\t}')
-        p('\treturn false;\n}')
-
-        p('static inline bool\nis_narrow_emoji(char_type code) {')
-        p('\tswitch(code) {')
-        for spec in get_ranges(list(narrow_emoji)):
-            write_case(spec, p)
-            p('\t\t\treturn true;')
-        p('\t\tdefault: return false;')
-        p('\t}')
-        p('\treturn false;\n}')
-
-
-
 def category_test(
     name: str,
     p: Callable[..., None],
@@ -422,28 +391,10 @@ def gen_ucd() -> None:
     with create_header('kitty/unicode-data.c') as p:
         p('#include "unicode-data.h"')
         p('START_ALLOW_CASE_RANGE')
-        category_test(
-                'is_combining_char', p,
-                (),
-                'Combining and default ignored characters',
-                extra_chars=marks,
-                least_check_return='false'
-        )
-        category_test(
-            'is_ignored_char', p, 'Cc Cs'.split(),
-            'Control characters and non-characters',
-            extra_chars=non_characters,
-            ascii_range='false'
-        )
-        category_test(
-            'is_non_rendered_char', p, 'Cc Cs Cf'.split(),
-            'Other_Default_Ignorable_Code_Point and soft hyphen',
-            extra_chars=property_maps['Other_Default_Ignorable_Code_Point'] | set(range(0xfe00, 0xfe0f + 1)),
-            ascii_range='false'
-        )
         category_test('is_word_char', p, {c for c in class_maps if c[0] in 'LN'}, 'L and N categories')
         category_test('is_CZ_category', p, cz, 'C and Z categories')
         category_test('is_P_category', p, {c for c in class_maps if c[0] == 'P'}, 'P category (punctuation)')
+
 
 def gen_names() -> None:
     aliases_map: dict[int, set[str]] = {}
@@ -466,73 +417,6 @@ def gen_names() -> None:
 
 def gofmt(*files: str) -> None:
     subprocess.check_call(['gofmt', '-w', '-s'] + list(files))
-
-
-def gen_wcwidth() -> None:
-    seen: set[int] = set()
-    non_printing = class_maps['Cc'] | class_maps['Cf'] | class_maps['Cs']
-
-    def add(p: Callable[..., None], comment: str, chars_: Union[set[int], frozenset[int]], ret: int, for_go: bool = False) -> None:
-        chars = chars_ - seen
-        seen.update(chars)
-        p(f'\t\t// {comment} ({len(chars)} codepoints)' + ' {{' '{')
-        for spec in get_ranges(list(chars)):
-            write_case(spec, p, for_go)
-            p(f'\t\t\treturn {ret};')
-        p('\t\t// }}}\n')
-
-    def add_all(p: Callable[..., None], for_go: bool = False) -> None:
-        seen.clear()
-        add(p, 'Flags', flag_codepoints, 2, for_go)
-        add(p, 'Marks', marks | {0}, 0, for_go)
-        add(p, 'Non-printing characters', non_printing, -1, for_go)
-        add(p, 'Private use', class_maps['Co'], -3, for_go)
-        add(p, 'Text Presentation', narrow_emoji, 1, for_go)
-        add(p, 'East Asian ambiguous width', ambiguous, -2, for_go)
-        add(p, 'East Asian double width', doublewidth, 2, for_go)
-        add(p, 'Emoji Presentation', wide_emoji, 2, for_go)
-
-        add(p, 'Not assigned in the unicode character database', not_assigned, -4, for_go)
-
-        p('\t\tdefault:\n\t\t\treturn 1;')
-        p('\t}')
-        if for_go:
-            p('\t}')
-        else:
-            p('\treturn 1;\n}')
-
-    with create_header('kitty/wcwidth-std.h') as p, open('tools/wcswidth/std.go', 'w') as gof:
-        gop = partial(print, file=gof)
-        gop('package wcswidth\n\n')
-        gop('func Runewidth(code rune) int {')
-        p('static inline int\nwcwidth_std(int32_t code) {')
-        p('\tif (LIKELY(0x20 <= code && code <= 0x7e)) { return 1; }')
-        p('\tswitch(code) {')
-        gop('\tswitch(code) {')
-        add_all(p)
-        add_all(gop, True)
-
-        p('static inline bool\nis_emoji_presentation_base(uint32_t code) {')
-        gop('func IsEmojiPresentationBase(code rune) bool {')
-        p('\tswitch(code) {')
-        gop('\tswitch(code) {')
-        for spec in get_ranges(list(emoji_presentation_bases)):
-            write_case(spec, p)
-            write_case(spec, gop, for_go=True)
-            p('\t\t\treturn true;')
-            gop('\t\t\treturn true;')
-        p('\t\tdefault: return false;')
-        p('\t}')
-        gop('\t\tdefault:\n\t\t\treturn false')
-        gop('\t}')
-        p('\treturn true;\n}')
-        gop('\n}')
-        uv = unicode_version()
-        p(f'#define UNICODE_MAJOR_VERSION {uv[0]}')
-        p(f'#define UNICODE_MINOR_VERSION {uv[1]}')
-        p(f'#define UNICODE_PATCH_VERSION {uv[2]}')
-        gop('var UnicodeDatabaseVersion [3]int = [3]int{' f'{uv[0]}, {uv[1]}, {uv[2]}' + '}')
-    gofmt(gof.name)
 
 
 def gen_rowcolumn_diacritics() -> None:
@@ -702,11 +586,15 @@ width_shift = 4
 class CharProps(NamedTuple):
 
     width: int = 3
-    grapheme_break: str = '2'
+    grapheme_break: str = '4'
     indic_conjunct_break: str = '2'
     is_invalid: bool = True
     is_extended_pictographic: bool = True
     is_non_rendered: bool = True
+    is_emoji_presentation_base: bool = True
+    is_emoji: bool = True
+    is_symbol: bool = True
+    is_combining_char: bool = True
 
     @property
     def go_fields(self) -> Iterable[str]:
@@ -741,12 +629,21 @@ class CharProps(NamedTuple):
 
     @property
     def as_c(self) -> str:
-        return ('{'
-            f' .shifted_width={self.width + width_shift}, .grapheme_break=GBP_{self.grapheme_break},'
-            f' .indic_conjunct_break=ICB_{self.indic_conjunct_break},'
-            f' .is_invalid={int(self.is_invalid)}, .is_extended_pictographic={int(self.is_extended_pictographic)},'
-            f' .is_non_rendered={int(self.is_non_rendered)},'
-        ' }')
+        parts = []
+        for f in self._fields:
+            x = getattr(self, f)
+            match f:
+                case 'width':
+                    x += width_shift
+                    f = 'shifted_width'
+                case 'grapheme_break':
+                    x = f'GBP_{x}'
+                case 'indic_conjunct_break':
+                    x = f'ICB_{x}'
+                case _:
+                    x = int(x)
+            parts.append(f'.{f}={x}')
+        return '{' + ', '.join(parts) + '}'
 
 
 def generate_enum(p: Callable[..., None], gp: Callable[..., None], name: str, *items: str, prefix: str = '') -> None:
@@ -794,8 +691,9 @@ def gen_char_props() -> None:
     prop_array = tuple(
         CharProps(
             width=width_map.get(ch, 1), grapheme_break=gs_map.get(ch, 'None'), indic_conjunct_break=icb_map.get(ch, 'None'),
-            is_invalid=ch in invalid, is_non_rendered=ch in non_printing,
-            is_extended_pictographic=ch in extended_pictographic
+            is_invalid=ch in invalid, is_non_rendered=ch in non_printing, is_emoji=ch in all_emoji, is_symbol=ch in all_symbols,
+            is_extended_pictographic=ch in extended_pictographic, is_emoji_presentation_base=ch in emoji_presentation_bases,
+            is_combining_char=ch in marks,
         ) for ch in range(sys.maxunicode + 1))
     t1, t2, shift, mask, bytesz = splitbins(prop_array, 2)
     print(f'Size of character properties table: {bytesz/1024:.1f}KB')
@@ -813,6 +711,13 @@ func (s CharProps) Width() int {{
 }}''')
         gen_multistage_table(c, gp, t1, t2, shift, mask)
     gofmt(gof.name)
+    with open('kitty/char-props.h', 'r+') as f:
+        raw = f.read()
+        nraw = re.sub(r'\d+/\*=width_shift\*/', f'{width_shift}/*=width_shift*/', raw)
+        if nraw != raw:
+            f.seek(0)
+            f.truncate()
+            f.write(nraw)
 
 
 def main(args: list[str]=sys.argv) -> None:
@@ -822,8 +727,6 @@ def main(args: list[str]=sys.argv) -> None:
     parse_eaw()
     parse_grapheme_segmentation()
     gen_ucd()
-    gen_wcwidth()
-    gen_emoji()
     gen_names()
     gen_rowcolumn_diacritics()
     gen_test_data()

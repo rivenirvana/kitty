@@ -99,7 +99,7 @@ Detailed list of changes
 
 - A new mode of operation for :opt:`text_fg_override_threshold` to override
   foreground colors so as to maintain a minimum contrast between foreground and
-  background text colors. Works in a perceptual color for best color accuracy
+  background text colors. Works in a perceptual color space for best color accuracy
   (:pull:`8420`)
 
 - :ref:`kitty +open <launch_actions>`: Ask for confirmation by default when running executables
@@ -117,6 +117,10 @@ Detailed list of changes
 - Fix a regression in 0.40.1 that caused copying to clipboard via OSC 52 from
   applications that dont specify a destination in the escape code not working
   (:iss:`8459`)
+
+- Wayland: Fix a regression in the previous release that caused crashes on
+  compositors that dont support the xdg-toplevel-icon protocol and the user has
+  set a custom kitty icon (:iss:`8471`)
 
 0.40.1 [2025-03-18]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

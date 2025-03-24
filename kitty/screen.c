@@ -28,7 +28,7 @@
 #include <fcntl.h>
 #include "unicode-data.h"
 #include "modes.h"
-#include "wcwidth-std.h"
+#include "char-props.h"
 #include "wcswidth.h"
 #include <stdalign.h>
 #include "keys.h"
@@ -934,6 +934,11 @@ move_widened_char_past_multiline_chars(Screen *self, CPUCell* cpu_cell, GPUCell 
     *cpu_cell = (CPUCell){0}; *gpu_cell = (GPUCell){0};
 }
 
+static bool
+is_emoji_presentation_base(char_type ch) {
+    return char_props_for(ch).is_emoji_presentation_base == 1;
+}
+
 static void
 draw_combining_char(Screen *self, text_loop_state *s, char_type ch) {
     bool has_prev_char = false;
@@ -1082,7 +1087,7 @@ draw_text_loop(Screen *self, const uint32_t *chars, size_t num_chars, text_loop_
             draw_control_char(self, s, ch);
             continue;
         }
-        if (self->cursor->x < self->columns && s->cp[self->cursor->x].is_multicell && !is_combining_char(ch)) {
+        if (self->cursor->x < self->columns && s->cp[self->cursor->x].is_multicell && !char_props_for(ch).is_combining_char) {
             if (s->cp[self->cursor->x].y) {
                 move_cursor_past_multicell(self, 1);
                 init_text_loop_line(self, s);
@@ -1091,8 +1096,9 @@ draw_text_loop(Screen *self, const uint32_t *chars, size_t num_chars, text_loop_
 
         int char_width = 1;
         if (ch > DEL) {  // not printable ASCII
-            if (is_ignored_char(ch)) continue;
-            if (UNLIKELY(is_combining_char(ch))) {
+            CharProps cp = char_props_for(ch);
+            if (cp.is_invalid) continue;
+            if (UNLIKELY(cp.is_combining_char)) {
                 if (UNLIKELY(is_flag_codepoint(ch))) {
                     if (draw_second_flag_codepoint(self, ch)) continue;
                 } else {
@@ -1100,7 +1106,7 @@ draw_text_loop(Screen *self, const uint32_t *chars, size_t num_chars, text_loop_
                     continue;
                 }
             }
-            char_width = wcwidth_std(ch);
+            char_width = wcwidth_std(cp);
             if (UNLIKELY(char_width < 1)) {
                 if (char_width == 0) continue;
                 char_width = 1;
@@ -1276,8 +1282,9 @@ screen_handle_multicell_command(Screen *self, const MultiCellCommand *cmd, const
         mcd.natural_width = true;
         for (unsigned i = 0; i < self->lc->count; i++) {
             char_type ch = self->lc->chars[i];
-            if (is_ignored_char(ch)) continue;
-            if (is_combining_char(ch)) {
+            CharProps cp = char_props_for(ch);
+            if (cp.is_invalid) continue;
+            if (cp.is_combining_char) {
                 if (is_flag_codepoint(ch)) {
                     if (lc.count == 1) {
                         if (is_flag_pair(lc.chars[0], ch)) {
@@ -4272,7 +4279,7 @@ screen_truncate_point_for_length(PyObject UNUSED *self, PyObject *args) {
                 prev_width = 2;
             } else prev_width = 0;
         } else {
-            int w = wcwidth_std(ch);
+            int w = wcwidth_std(char_props_for(ch));
             switch(w) {
                 case -1:
                 case 0:

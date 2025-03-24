@@ -17,7 +17,10 @@ typedef union CharProps {
         uint8_t is_invalid: 1;
         uint8_t shifted_width : 3;
         uint8_t is_non_rendered : 1;
-        uint8_t : 4;
+        uint8_t is_emoji_presentation_base : 1;
+        uint8_t is_emoji : 1;
+        uint8_t is_symbol : 1;
+        uint8_t is_combining_char : 1;
     };
     uint16_t val;
 } CharProps;
@@ -51,3 +54,4 @@ values:  consonant {extend|linker}* linker {extend|linker}*  */
 CharProps char_props_for(char_type ch);
 void grapheme_segmentation_reset(GraphemeSegmentationState *s);
 bool grapheme_segmentation_step(GraphemeSegmentationState *s, CharProps ch);
+static inline int wcwidth_std(CharProps ch) { return (int)ch.shifted_width - 4/*=width_shift*/; }

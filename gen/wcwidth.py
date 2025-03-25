@@ -11,8 +11,8 @@ from collections.abc import Generator, Hashable, Iterable
 from contextlib import contextmanager
 from functools import lru_cache, partial
 from html.entities import html5
-from itertools import groupby
-from operator import itemgetter
+from io import StringIO
+from math import ceil, log
 from typing import (
     Callable,
     DefaultDict,
@@ -287,17 +287,6 @@ def parse_grapheme_segmentation() -> None:
             extended_pictographic |= chars
 
 
-def get_ranges(items: list[int]) -> Generator[Union[int, tuple[int, int]], None, None]:
-    items.sort()
-    for k, g in groupby(enumerate(items), lambda m: m[0]-m[1]):
-        group = tuple(map(itemgetter(1), g))
-        a, b = group[0], group[-1]
-        if a == b:
-            yield a
-        else:
-            yield a, b
-
-
 def write_case(spec: Union[tuple[int, ...], int], p: Callable[..., None], for_go: bool = False) -> None:
     if isinstance(spec, tuple):
         if for_go:
@@ -325,75 +314,6 @@ def create_header(path: str, include_data_types: bool = True) -> Generator[Calla
         p()
         if include_data_types:
             p('END_ALLOW_CASE_RANGE')
-
-
-def category_test(
-    name: str,
-    p: Callable[..., None],
-    classes: Iterable[str],
-    comment: str,
-    use_static: bool = False,
-    extra_chars: Union[frozenset[int], set[int]] = frozenset(),
-    exclude: Union[set[int], frozenset[int]] = frozenset(),
-    least_check_return: Optional[str] = None,
-    ascii_range: Optional[str] = None
-) -> None:
-    static = 'static inline ' if use_static else ''
-    chars: set[int] = set()
-    for c in classes:
-        chars |= class_maps[c]
-    chars |= extra_chars
-    chars -= exclude
-    p(f'{static}bool\n{name}(char_type code) {{')
-    p(f'\t// {comment} ({len(chars)} codepoints)' + ' {{' '{')
-    if least_check_return is not None:
-        least = min(chars)
-        p(f'\tif (LIKELY(code < {least})) return {least_check_return};')
-    if ascii_range is not None:
-        p(f'\tif (LIKELY(0x20 <= code && code <= 0x7e)) return {ascii_range};')
-    p('\tswitch(code) {')
-    for spec in get_ranges(list(chars)):
-        write_case(spec, p)
-        p('\t\t\treturn true;')
-    p('\t} // }}}\n')
-    p('\treturn false;\n}\n')
-
-
-def classes_to_regex(classes: Iterable[str], exclude: str = '', for_go: bool = True) -> Iterable[str]:
-    chars: set[int] = set()
-    for c in classes:
-        chars |= class_maps[c]
-    for x in map(ord, exclude):
-        chars.discard(x)
-
-    if for_go:
-        def as_string(codepoint: int) -> str:
-            if codepoint < 256:
-                return fr'\x{codepoint:02x}'
-            return fr'\x{{{codepoint:x}}}'
-    else:
-        def as_string(codepoint: int) -> str:
-            if codepoint < 256:
-                return fr'\x{codepoint:02x}'
-            if codepoint <= 0xffff:
-                return fr'\u{codepoint:04x}'
-            return fr'\U{codepoint:08x}'
-
-    for spec in get_ranges(list(chars)):
-        if isinstance(spec, tuple):
-            yield '{}-{}'.format(*map(as_string, (spec[0], spec[1])))
-        else:
-            yield as_string(spec)
-
-
-def gen_ucd() -> None:
-    cz = {c for c in class_maps if c[0] in 'CZ'}
-    with create_header('kitty/unicode-data.c') as p:
-        p('#include "unicode-data.h"')
-        p('START_ALLOW_CASE_RANGE')
-        category_test('is_word_char', p, {c for c in class_maps if c[0] in 'LN'}, 'L and N categories')
-        category_test('is_CZ_category', p, cz, 'C and Z categories')
-        category_test('is_P_category', p, {c for c in class_maps if c[0] == 'P'}, 'P category (punctuation)')
 
 
 def gen_names() -> None:
@@ -499,7 +419,7 @@ def getsize(data: Iterable[int]) -> Literal[1, 2, 4]:
     return 4
 
 
-def splitbins[T: Hashable](t: tuple[T, ...], property_size: int, use_fixed_shift: int = 0) -> tuple[list[int], list[T], int, int, int]:
+def splitbins[T: Hashable](t: tuple[T, ...], property_size: int, use_fixed_shift: int = 0) -> tuple[list[int], list[int], list[T], int, int, int]:
     if use_fixed_shift:
         candidates = range(use_fixed_shift, use_fixed_shift + 1)
     else:
@@ -510,14 +430,23 @@ def splitbins[T: Hashable](t: tuple[T, ...], property_size: int, use_fixed_shift
                 n >>= 1
                 maxshift += 1
         candidates = range(maxshift + 1)
+    t3: list[T] = []
+    tmap: dict[T, int] = {}
+    seen = set()
+    for x in t:
+        if x not in seen:
+            seen.add(x)
+            tmap[x] = len(t3)
+            t3.append(x)
+    t_int = tuple(tmap[x] for x in t)
     bytesz = sys.maxsize
     for shift in candidates:
         t1: list[int] = []
-        t2: list[T] = []
+        t2: list[int] = []
         size = 2**shift
-        bincache: dict[tuple[T, ...], int] = {}
-        for i in range(0, len(t), size):
-            bin = t[i:i+size]
+        bincache: dict[tuple[int, ...], int] = {}
+        for i in range(0, len(t_int), size):
+            bin = t_int[i:i+size]
             index = bincache.get(bin)
             if index is None:
                 index = len(t2)
@@ -525,13 +454,13 @@ def splitbins[T: Hashable](t: tuple[T, ...], property_size: int, use_fixed_shift
                 t2.extend(bin)
             t1.append(index >> shift)
         # determine memory size
-        b = len(t1)*getsize(t1) + len(t2)*property_size
+        b = len(t1)*getsize(t1) + len(t3)*property_size + len(t2)*getsize(t2)
         if b < bytesz:
             best = t1, t2, shift
             bytesz = b
     t1, t2, shift = best
     mask = ~((~0) << shift)
-    return t1, t2, shift, mask, bytesz
+    return t1, t2, t3, shift, mask, bytesz
 
 
 class Property(Protocol):
@@ -544,57 +473,82 @@ class Property(Protocol):
         return ''
 
 
+def get_types(sz: int) -> tuple[str, str]:
+    sz *= 8
+    return f'uint{sz}_t', f'uint{sz}'
+
+
 def gen_multistage_table(
-    c: Callable[..., None], g: Callable[..., None], t1: Sequence[int], t2: Sequence[Property], shift: int, mask: int
+    c: Callable[..., None], g: Callable[..., None], t1: Sequence[int], t2: Sequence[int], t3: Sequence[Property], shift: int, mask: int
 ) -> None:
-    sz = getsize(t1)
-    name = t2[0].__class__.__name__
-    match sz:
-        case 1:
-            ctype = 'unsigned char'
-            gotype = 'uint8'
-        case 2:
-            ctype = 'unsigned short'
-            gotype = 'uint16'
-        case 4:
-            ctype = 'uint32_t'
-            gotype = 'uint32'
+    ctype_t1, gotype_t1 = get_types(getsize(t1))
+    name = t3[0].__class__.__name__
+    ctype_t2, gotype_t2 = get_types(getsize(tuple(range(len(t3)))))
     c(f'static const char_type {name}_mask = {mask}u;')
     c(f'static const char_type {name}_shift = {shift}u;')
-    c(f'static const {ctype} {name}_t1[{len(t1)}] = ''{')
+    c(f'static const {ctype_t1} {name}_t1[{len(t1)}] = ''{')
     c(f'\t{", ".join(map(str, t1))}')
     c('};')
-    items = '\n\t'.join(x.as_c + ',' for x in t2)
-    c(f'static const {name} {name}_t2[{len(t2)}] = ''{')
+    c(f'static const {ctype_t2} {name}_t2[{len(t2)}] = ''{')
+    c(f'\t{", ".join(map(str, t2))}')
+    c('};')
+    items = '\n\t'.join(x.as_c + ',' for x in t3)
+    c(f'static const {name} {name}_t3[{len(t3)}] = ''{')
     c(f'\t{items}')
     c('};')
 
     lname = name.lower()
     g(f'const {lname}_mask = {mask}')
     g(f'const {lname}_shift = {shift}')
-    g(f'var {lname}_t1 = [{len(t1)}]{gotype}''{')
+    g(f'var {lname}_t1 = [{len(t1)}]{gotype_t1}''{')
     g(f'\t{", ".join(map(str, t1))},')
     g('}')
-    items = '\n\t'.join(x.as_go + ',' for x in t2)
-    g(f'var {lname}_t2 = [{len(t2)}]{name}''{')
+    g(f'var {lname}_t2 = [{len(t2)}]{gotype_t2}''{')
+    g(f'\t{", ".join(map(str, t2))},')
+    g('}')
+    items = '\n\t'.join(x.as_go + ',' for x in t3)
+    g(f'var {lname}_t3 = [{len(t3)}]{name}''{')
     g(f'\t{items}')
     g('}')
 
 
 width_shift = 4
 
+
+def bitsize(maxval: int) -> int:  # number of bits needed to store maxval
+    return ceil(log(maxval, 2))
+
+
 class CharProps(NamedTuple):
 
     width: int = 3
-    grapheme_break: str = '4'
-    indic_conjunct_break: str = '2'
-    is_invalid: bool = True
     is_extended_pictographic: bool = True
-    is_non_rendered: bool = True
-    is_emoji_presentation_base: bool = True
+    grapheme_break: str = ''  # set at runtime
+    indic_conjunct_break: str = ''  # set at runtime
+    category: str = ''  # set at runtime
     is_emoji: bool = True
+    is_emoji_presentation_base: bool = True
+
+    # derived properties for fast lookup
+    is_invalid: bool = True
+    is_non_rendered: bool = True
     is_symbol: bool = True
     is_combining_char: bool = True
+    is_word_char: bool = True
+    is_punctuation: bool = True
+
+    @classmethod
+    def bitsize(cls) -> int:
+        ans = sum(int(cls._field_defaults[f]) for f in cls._fields)
+        if ans <= 8:
+            return 8
+        if ans <= 16:
+            return 16
+        if ans <= 32:
+            return 32
+        if ans <= 64:
+            return 64
+        raise ValueError('Too many fields')
 
     @property
     def go_fields(self) -> Iterable[str]:
@@ -619,6 +573,8 @@ class CharProps(NamedTuple):
                     x = f'CharProps(GBP_{x})'
                 case 'indic_conjunct_break':
                     x = f'CharProps(ICB_{x})'
+                case 'category':
+                    x = f'CharProps(UC_{x})'
                 case _:
                     x = int(x)
             bits = int(self._field_defaults[f])
@@ -640,10 +596,28 @@ class CharProps(NamedTuple):
                     x = f'GBP_{x}'
                 case 'indic_conjunct_break':
                     x = f'ICB_{x}'
+                case 'category':
+                    x = f'UC_{x}'
                 case _:
                     x = int(x)
             parts.append(f'.{f}={x}')
         return '{' + ', '.join(parts) + '}'
+
+    @classmethod
+    def c_declaration(cls) -> str:
+        base_type = f'uint{cls.bitsize()}_t'
+        bits = sum(int(cls._field_defaults[f]) for f in cls._fields)
+        ans = ['// CharPropsDeclaration', f'// Uses {bits} bits', 'typedef union CharProps {', '    struct {']
+
+        for f in cls._fields:
+            n = 'shifted_width' if f == 'width' else f
+            ans.append(f'        uint8_t {n} : {int(cls._field_defaults[f])};')
+        ans.append('    };')
+        ans.append(f'    {base_type} val;')
+        ans.append('} CharProps;')
+        ans.append(f'static_assert(sizeof(CharProps) == sizeof({base_type}), "Fix the ordering of CharProps");')
+        ans.append('// EndCharPropsDeclaration')
+        return '\n'.join(ans)
 
 
 def generate_enum(p: Callable[..., None], gp: Callable[..., None], name: str, *items: str, prefix: str = '') -> None:
@@ -663,10 +637,31 @@ def generate_enum(p: Callable[..., None], gp: Callable[..., None], name: str, *i
     gp('')
 
 
+def category_set(predicate: Callable[[str], bool]) -> set[int]:
+    ans = set()
+    for c, chs in class_maps.items():
+        if predicate(c):
+            ans |= chs
+    return ans
+
+
+def top_level_category(q: str) -> set[int]:
+    return category_set(lambda x: x[0] in q)
+
+
 def gen_char_props() -> None:
+    CharProps._field_defaults['grapheme_break'] = str(bitsize(len(grapheme_segmentation_maps) + 2))
+    CharProps._field_defaults['indic_conjunct_break'] = str(bitsize(len(incb_map) + 1))
+    CharProps._field_defaults['category'] = str(bitsize(len(class_maps) + 1))
     invalid = class_maps['Cc'] | class_maps['Cs']
     non_printing = invalid | class_maps['Cf']
+    is_word_char = top_level_category('LN')
+    is_punctuation = top_level_category('P')
     width_map: dict[int, int] = {}
+    cat_map: dict[int, str] = {}
+    for cat, chs in class_maps.items():
+        for ch in chs:
+            cat_map[ch] = cat
     def aw(s: Iterable[int], width: int) -> None:
         nonlocal width_map
         d = dict.fromkeys(s, width)
@@ -693,27 +688,36 @@ def gen_char_props() -> None:
             width=width_map.get(ch, 1), grapheme_break=gs_map.get(ch, 'None'), indic_conjunct_break=icb_map.get(ch, 'None'),
             is_invalid=ch in invalid, is_non_rendered=ch in non_printing, is_emoji=ch in all_emoji, is_symbol=ch in all_symbols,
             is_extended_pictographic=ch in extended_pictographic, is_emoji_presentation_base=ch in emoji_presentation_bases,
-            is_combining_char=ch in marks,
+            is_combining_char=ch in marks, category=cat_map.get(ch, 'Cn'), is_word_char=ch in is_word_char,
+            is_punctuation=ch in is_punctuation,
         ) for ch in range(sys.maxunicode + 1))
-    t1, t2, shift, mask, bytesz = splitbins(prop_array, 2)
+    t1, t2, t3, shift, mask, bytesz = splitbins(prop_array, CharProps.bitsize() // 8)
     print(f'Size of character properties table: {bytesz/1024:.1f}KB')
+
     from .bitfields import make_bitfield
+    buf = StringIO()
+    cen = partial(print, file=buf)
     with create_header('kitty/char-props-data.h', include_data_types=False) as c, open('tools/wcswidth/char-props-data.go', 'w') as gof:
         gp = partial(print, file=gof)
         gp('package wcswidth')
         generate_enum(c, gp, 'GraphemeBreakProperty', 'AtStart', 'None', *grapheme_segmentation_maps, prefix='GBP_')
         generate_enum(c, gp, 'IndicConjunctBreak', 'None', *incb_map, prefix='ICB_')
+        cen('// UCBDeclaration')
+        generate_enum(cen, gp, 'UnicodeCategory', 'Cn', *class_maps, prefix='UC_')
+        cen('// EndUCBDeclaration')
         bf = make_bitfield('tools/wcswidth', 'CharProps', *CharProps().go_fields, add_package=False)[1]
         gp(bf)
         gp(f'''
 func (s CharProps) Width() int {{
 	return int(s.Shifted_width()) - {width_shift}
 }}''')
-        gen_multistage_table(c, gp, t1, t2, shift, mask)
+        gen_multistage_table(c, gp, t1, t2, t3, shift, mask)
     gofmt(gof.name)
     with open('kitty/char-props.h', 'r+') as f:
         raw = f.read()
         nraw = re.sub(r'\d+/\*=width_shift\*/', f'{width_shift}/*=width_shift*/', raw)
+        nraw = re.sub(r'// CharPropsDeclaration.+?// EndCharPropsDeclaration', CharProps.c_declaration(), nraw, flags=re.DOTALL)
+        nraw = re.sub(r'// UCBDeclaration.+?// EndUCBDeclaration', buf.getvalue().rstrip(), nraw, flags=re.DOTALL)
         if nraw != raw:
             f.seek(0)
             f.truncate()
@@ -726,7 +730,6 @@ def main(args: list[str]=sys.argv) -> None:
     parse_emoji()
     parse_eaw()
     parse_grapheme_segmentation()
-    gen_ucd()
     gen_names()
     gen_rowcolumn_diacritics()
     gen_test_data()

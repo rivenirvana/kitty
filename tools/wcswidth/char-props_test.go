@@ -3,13 +3,13 @@ package wcswidth
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"testing"
 
+	_ "embed"
 	"github.com/google/go-cmp/cmp"
 
-	"kitty/tools/utils"
+	"kitty"
 )
 
 var _ = fmt.Print
@@ -29,19 +29,8 @@ func TestSplitIntoGraphemes(t *testing.T) {
 			t.Fatalf("Failed to split %#v into graphemes: %s", text, diff)
 		}
 	}
-	cmd := exec.Command(utils.KittyExe(), "+runpy", `
-from kitty.constants import read_kitty_resource
-import sys
-sys.stdout.buffer.write(read_kitty_resource("GraphemeBreakTest.json", "kitty_tests"))
-sys.stdout.flush()
-`)
-	var output []byte
-	var err error
-	if output, err = cmd.Output(); err != nil {
-		t.Fatalf("Getting GraphemeBreakTest.json failed with error: %s", err)
-	}
 	tests := []GraphemeBreakTest{}
-	if err = json.Unmarshal(output, &tests); err != nil {
+	if err := json.Unmarshal(kitty.GraphemeBreakTestData, &tests); err != nil {
 		t.Fatalf("Failed to parse GraphemeBreakTest JSON with error: %s", err)
 	}
 	for i, x := range tests {

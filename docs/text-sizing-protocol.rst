@@ -356,6 +356,13 @@ The algorithm for splitting text into cells
    This uses tests published by the Unicode consortium, `GraphemeBreakTest.txt
    <https://www.unicode.org/Public/UCD/latest/ucd/auxiliary/GraphemeBreakTest.txt>`__.
 
+.. warning::
+   This algorithm is under public discussion in :iss:`8533`. Until that issue
+   is closed, it is subject to change based on feedback from the community.
+   Additionally, in the future if the Unicode standard changes in ways that
+   affect this algorithm, it will be updated. Currently the algorithm is based
+   on Unicode version 16.
+
 Here, we specify how a terminal must split up text into cells, where a cell is
 a width one unit in the character grid the terminal displays.
 
@@ -407,34 +414,32 @@ character. To do this, characters are divided into various classes, as
 described by the rules below, in order of decreasing priority:
 
 .. note::
-   Notation: :code:`[start, stop, step]` means the integeres from :code:`start`
+   Notation: :code:`[start, stop, step]` means the integers from :code:`start`
    to :code:`stop` in increments of :code:`step`. When the step is not
    specified, it defaults to one.
 
-#. Regional indicators: 26 characters starting at :code:`0x1F1E6`. These all
+#. *Regional indicators*: 26 characters starting at :code:`0x1F1E6`. These all
    have width 2
 
-#. Doublewidth: Parse `EastAsianWidth.txt
+#. *Doublewidth*: Parse `EastAsianWidth.txt
    <https://www.unicode.org/Public/UCD/latest/ucd/EastAsianWidth.txt>`__ from
    the Unicode standard. All characters marked :code:`W` or :code:`F` have
    width two. All characters in the following ranges have width two *unless*
    they are marked as :code:`A` in :code:`EastAsianWidth.txt`: :code:`[0x3400,
    0x4DBF], [0x4E00, 0x9FFF], [0xF900, 0xFAFF], [0x20000, 0x2FFFD], [0x30000, 0x3FFFD]`
 
-.. _wide_emoji_rule:
-
-#. Wide Emoji: Parse `emoji-sequences.txt
+#. *Wide emoji*: Parse `emoji-sequences.txt
    <https://www.unicode.org/Public/emoji/latest/emoji-sequences.txt>`__ from
    the Unicode standard. All :code:`Basic_Emoji` have width two unless they are
    followed by :code:`FE0F` in the file. The leading copdepoints in all
    :code:`RGI_Emoji_Modifier_Sequence` and :code:`RGI_Emoji_Tag_Sequence` have width two.
    All codepoints in :code:`RGI_Emoji_Flag_Sequence` have width two.
 
-#. Marks: These are all zero width characters. They are characters with Unicode
+#. *Marks*: These are all zero width characters. They are characters with Unicode
    categories whose first letter is :code:`M` or :code:`S`. Additionally,
    characters with Unicode category: :code:`Cf`. Finally, they include
    all modifier codepoints from :code:`RGI_Emoji_Modifier_Sequence` in the
-   :ref:`Wide emoji rule <wide_emoji_rule>`.
+   *Wide emoji* rule above.
 
 #. All remaining codepoints have a width of one cell.
 
@@ -449,14 +454,14 @@ previous cell these have to be handled specially.
 
 ``U+FE0E`` - Variation Selector 15
   When the previous cell has width two and the last character in the previous
-  cell is one of the ``Basic_Emoji`` codepoints from the :ref:`Wide emoji rule
-  <wide_emoji_rule>` that is *not* followed by ``FEOF`` then the width of the
-  previous cell is decreased to one.
+  cell is one of the ``Basic_Emoji`` codepoints from the *Wide emoji* rule above
+  that is *not* followed by ``FEOF`` then the width of the previous cell is
+  decreased to one.
 
 ``U+FE0F`` - Variation Selector 16
   When the previous cell has width one and the last character in the previous
-  cell is one of the ``Basic_Emoji`` codepoints from the :ref:`Wide emoji rule
-  <wide_emoji_rule>` that is followed by ``FEOF`` then the width of the
+  cell is one of the ``Basic_Emoji`` codepoints from the *Wide emoji* rule above
+  that is followed by ``FEOF`` then the width of the
   previous cell is increased to two.
 
 Note that the rule for ``U+FE0E`` is particularly problematic for terminals as

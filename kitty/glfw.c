@@ -1141,17 +1141,19 @@ calculate_layer_shell_window_size(
     OSWindow *os_window = os_window_for_glfw_window(window);
     debug("Calculating layer shell window size at scale: %f\n", xscale);
     FONTS_DATA_HANDLE fonts_data = load_fonts_data(os_window ? os_window->fonts_data->font_sz_in_pts : OPT(font_size), xdpi, ydpi);
+    const unsigned xsz = config->x_size_in_pixels ? (unsigned)(config->x_size_in_pixels * xscale) : (fonts_data->fcm.cell_width * config->x_size_in_cells);
+    const unsigned ysz = config->y_size_in_pixels ? (unsigned)(config->y_size_in_pixels * yscale) : (fonts_data->fcm.cell_height * config->y_size_in_cells);
     if (config->edge == GLFW_EDGE_LEFT || config->edge == GLFW_EDGE_RIGHT) {
         if (!*height) *height = monitor_height;
         double spacing = edge_spacing(GLFW_EDGE_LEFT) + edge_spacing(GLFW_EDGE_RIGHT);
         spacing *= xdpi / 72.;
-        spacing += (fonts_data->fcm.cell_width * config->x_size_in_cells) / xscale;
+        spacing += xsz / xscale;
         *width = (uint32_t)(1. + spacing);
     } else if (config->edge == GLFW_EDGE_TOP || config->edge == GLFW_EDGE_BOTTOM) {
         if (!*width) *width = monitor_width;
         double spacing = edge_spacing(GLFW_EDGE_TOP) + edge_spacing(GLFW_EDGE_BOTTOM);
         spacing *= ydpi / 72.;
-        spacing += (fonts_data->fcm.cell_height * config->y_size_in_cells) / yscale;
+        spacing += ysz / yscale;
         *height = (uint32_t)(1. + spacing);
     } else if (config->edge == GLFW_EDGE_CENTER) {
         if (!*width) *width = monitor_width;
@@ -1159,10 +1161,10 @@ calculate_layer_shell_window_size(
     } else {
         double spacing_x = edge_spacing(GLFW_EDGE_LEFT) + edge_spacing(GLFW_EDGE_RIGHT);
         spacing_x *= xdpi / 72.;
-        spacing_x += (fonts_data->fcm.cell_width * config->x_size_in_cells) / xscale;
+        spacing_x += xsz / xscale;
         double spacing_y = edge_spacing(GLFW_EDGE_TOP) + edge_spacing(GLFW_EDGE_BOTTOM);
         spacing_y *= ydpi / 72.;
-        spacing_y += (fonts_data->fcm.cell_height * config->y_size_in_cells) / yscale;
+        spacing_y += ysz / yscale;
         *width = (uint32_t)(1. + spacing_x);
         *height = (uint32_t)(1. + spacing_y);
     }
@@ -1178,6 +1180,8 @@ translate_layer_shell_config(PyObject *p, GLFWLayerShellConfig *ans) {
     A(focus_policy, PyLong_Check, PyLong_AsLong);
     A(x_size_in_cells, PyLong_Check, PyLong_AsLong);
     A(y_size_in_cells, PyLong_Check, PyLong_AsLong);
+    A(x_size_in_pixels, PyLong_Check, PyLong_AsLong);
+    A(y_size_in_pixels, PyLong_Check, PyLong_AsLong);
     A(requested_top_margin, PyLong_Check, PyLong_AsLong);
     A(requested_left_margin, PyLong_Check, PyLong_AsLong);
     A(requested_bottom_margin, PyLong_Check, PyLong_AsLong);
@@ -1207,6 +1211,10 @@ create_os_window(PyObject UNUSED *self, PyObject *args, PyObject *kw) {
         &get_window_size, &pre_show_callback, &title, &wm_class_name, &wm_class_class, &optional_window_state, &load_programs, &optional_x, &optional_y, &disallow_override_title, &layer_shell_config)) return NULL;
     bool is_layer_shell = false;
     if (layer_shell_config && layer_shell_config != Py_None && global_state.is_wayland) {
+        if (!glfwWaylandIsLayerShellSupported()) {
+            PyErr_SetString(PyExc_RuntimeError, "The Wayland compositor does not support the layer shell protocol.");
+            return NULL;
+        }
         is_layer_shell = true;
     } else {
         if (optional_window_state && optional_window_state != Py_None) { if (!PyLong_Check(optional_window_state)) { PyErr_SetString(PyExc_TypeError, "window_state must be an int"); return NULL; } window_state = (int) PyLong_AsLong(optional_window_state); }
@@ -1355,6 +1363,7 @@ create_os_window(PyObject UNUSED *self, PyObject *args, PyObject *kw) {
     OSWindow *w = add_os_window();
     w->handle = glfw_window;
     w->disallow_title_changes = disallow_override_title;
+    w->is_layer_shell = is_layer_shell;
     update_os_window_references();
     if (!is_layer_shell) {
         for (size_t i = 0; i < global_state.num_os_windows; i++) {
@@ -2402,6 +2411,17 @@ make_x11_window_a_dock_window(PyObject *self UNUSED, PyObject *args UNUSED) {
     Py_RETURN_NONE;
 }
 
+static PyObject*
+is_layer_shell_supported(PyObject *self UNUSED, PyObject *args UNUSED) {
+#ifdef __APPLE__
+    Py_RETURN_FALSE;
+#else
+    if (!global_state.is_wayland) Py_RETURN_FALSE;
+    return Py_NewRef(glfwWaylandIsLayerShellSupported() ? Py_True : Py_False);
+#endif
+}
+
+
 // Boilerplate {{{
 
 static PyMethodDef module_methods[] = {
@@ -2423,6 +2443,7 @@ static PyMethodDef module_methods[] = {
     METHODB(x11_display, METH_NOARGS),
     METHODB(wayland_compositor_data, METH_NOARGS),
     METHODB(get_click_interval, METH_NOARGS),
+    METHODB(is_layer_shell_supported, METH_NOARGS),
     METHODB(x11_window_id, METH_O),
     METHODB(make_x11_window_a_dock_window, METH_VARARGS),
     METHODB(strip_csi, METH_O),

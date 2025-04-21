@@ -97,6 +97,13 @@ Detailed list of changes
 0.42.0 [future]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+- **Behavior change**: Now kitty does full grapheme segmentation following the
+  Unicode 16 spec when splitting text into cells (:iss:`8533`)
+
+- panel kitten: Allow using :option:`kitty +kitten panel --single-instance` to create multiple panels in one process (:iss:`8549`)
+
+- launch: Allow creating desktop panels such as those created by the :doc:`panel kitten </kittens/panel>` (:iss:`8549`)
+
 - Allow configuring the mouse unhide behavior when using :opt:`mouse_hide_wait` (:pull:`8508`)
 
 - diff kitten: Add half page and full page scroll vim-like bindings (:pull:`8514`)
@@ -106,6 +113,9 @@ Detailed list of changes
 - Wayland: When the compositor supports the `xdg-system-bell
   <https://wayland.app/protocols/xdg-system-bell-v1>`__ protocol use it to play
   the default bell sound
+
+- panel kitten: Allow specifying panel size in pixels in addition to cells
+
 
 0.41.1 [2025-04-03]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

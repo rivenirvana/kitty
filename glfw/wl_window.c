@@ -1446,6 +1446,9 @@ void _glfwPlatformDestroyWindow(_GLFWwindow* window)
     if (window->wl.xdg.surface)
         xdg_surface_destroy(window->wl.xdg.surface);
 
+    if (window->wl.layer_shell.zwlr_layer_surface_v1)
+        zwlr_layer_surface_v1_destroy(window->wl.layer_shell.zwlr_layer_surface_v1);
+
     if (window->wl.surface)
         wl_surface_destroy(window->wl.surface);
 
@@ -2829,6 +2832,12 @@ GLFWAPI void glfwWaylandRedrawCSDWindowTitle(GLFWwindow *handle) {
 GLFWAPI void glfwWaylandSetupLayerShellForNextWindow(const GLFWLayerShellConfig *c) {
     layer_shell_config_for_next_window = *c;
 }
+
+GLFWAPI GLFWLayerShellConfig* glfwWaylandLayerShellConfig(GLFWwindow *handle) {
+    return &((_GLFWwindow*)handle)->wl.layer_shell.config;
+}
+
+GLFWAPI bool glfwWaylandIsLayerShellSupported(void) { return _glfw.wl.zwlr_layer_shell_v1 != NULL; }
 
 GLFWAPI bool glfwWaylandIsWindowFullyCreated(GLFWwindow *handle) { return handle != NULL && ((_GLFWwindow*)handle)->wl.window_fully_created; }
 

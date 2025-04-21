@@ -29,13 +29,13 @@ func ExtractAllFromTar(tr *tar.Reader, dest_path string, optss ...TarExtractOpti
 		return
 	}
 
-	mode := func(hdr *tar.Header) fs.FileMode {
-		return fs.FileMode(hdr.Mode) & (fs.ModePerm | fs.ModeSetgid | fs.ModeSetuid | fs.ModeSticky)
+	mode := func(hdr int64) fs.FileMode {
+		return fs.FileMode(hdr) & (fs.ModePerm | fs.ModeSetgid | fs.ModeSetuid | fs.ModeSticky)
 	}
 
-	set_metadata := func(chmod func(mode fs.FileMode) error, hdr *tar.Header) (err error) {
+	set_metadata := func(chmod func(mode fs.FileMode) error, hdr_mode int64) (err error) {
 		if !opts.DontPreservePermissions && chmod != nil {
-			perms := mode(hdr)
+			perms := mode(hdr_mode)
 			if err = chmod(perms); err != nil {
 				return err
 			}
@@ -60,16 +60,26 @@ func ExtractAllFromTar(tr *tar.Reader, dest_path string, optss ...TarExtractOpti
 			continue
 		}
 		dest = filepath.Join(dest_path, dest)
+		if dest, err = filepath.EvalSymlinks(dest); err != nil {
+			if os.IsNotExist(err) {
+				err = nil
+			} else {
+				return count, err
+			}
+		}
+		if !strings.HasPrefix(filepath.Clean(dest), filepath.Clean(dest_path)+string(os.PathSeparator)) {
+			continue
+		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			err = os.MkdirAll(dest, 0o700)
 			if err != nil {
 				return
 			}
-			if err = set_metadata(func(m fs.FileMode) error { return os.Chmod(dest, m) }, hdr); err != nil {
+			if err = set_metadata(func(m fs.FileMode) error { return os.Chmod(dest, m) }, hdr.Mode); err != nil {
 				return
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			var d *os.File
 			if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 				return
@@ -77,7 +87,7 @@ func ExtractAllFromTar(tr *tar.Reader, dest_path string, optss ...TarExtractOpti
 			if d, err = os.Create(dest); err != nil {
 				return
 			}
-			err = set_metadata(d.Chmod, hdr)
+			err = set_metadata(d.Chmod, hdr.Mode)
 			if err == nil {
 				_, err = io.Copy(d, tr)
 			}
@@ -89,20 +99,31 @@ func ExtractAllFromTar(tr *tar.Reader, dest_path string, optss ...TarExtractOpti
 			if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 				return
 			}
-			if err = os.Link(hdr.Linkname, dest); err != nil {
+			link_target := hdr.Linkname
+			if !filepath.IsAbs(link_target) {
+				link_target = filepath.Join(filepath.Dir(dest), link_target)
+			}
+			if err = os.Link(link_target, dest); err != nil {
 				return
 			}
-			if err = set_metadata(func(m fs.FileMode) error { return os.Chmod(dest, m) }, hdr); err != nil {
+			if err = set_metadata(func(m fs.FileMode) error { return os.Chmod(dest, m) }, hdr.Mode); err != nil {
 				return
 			}
 		case tar.TypeSymlink:
 			if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 				return
 			}
-			if err = os.Symlink(hdr.Linkname, dest); err != nil {
+			link_target := hdr.Linkname
+			if !filepath.IsAbs(link_target) {
+				link_target = filepath.Join(filepath.Dir(dest), link_target)
+			}
+			// We dont care about the link target being outside dest_path as
+			// we use EvalSymlinks on dest, so a symlink pointing outside
+			// dest_path cannot cause writes outside dest_path.
+			if err = os.Symlink(link_target, dest); err != nil {
 				return
 			}
-			if err = set_metadata(nil, hdr); err != nil {
+			if err = set_metadata(nil, hdr.Mode); err != nil {
 				return
 			}
 		}

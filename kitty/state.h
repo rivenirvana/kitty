@@ -22,7 +22,7 @@
 
 typedef enum { LEFT_EDGE = 1, TOP_EDGE = 2, RIGHT_EDGE = 4, BOTTOM_EDGE = 8 } Edge;
 typedef enum { REPEAT_MIRROR, REPEAT_CLAMP, REPEAT_DEFAULT } RepeatStrategy;
-typedef enum { WINDOW_NORMAL, WINDOW_FULLSCREEN, WINDOW_MAXIMIZED, WINDOW_MINIMIZED } WindowState;
+typedef enum { WINDOW_NORMAL, WINDOW_FULLSCREEN, WINDOW_MAXIMIZED, WINDOW_MINIMIZED, WINDOW_HIDDEN } WindowState;
 
 typedef struct {
     char_type string[16];
@@ -313,6 +313,11 @@ typedef struct {
     id_type last_focused_counter;
     CloseRequest close_request;
     bool is_layer_shell;
+    struct {
+        monotonic_t last_change_at;
+        bool set_visible;
+        id_type timer_id;
+    } debounce_visibility_changes;
 } OSWindow;
 
 
@@ -325,7 +330,7 @@ typedef struct {
     OSWindow *os_windows;
     size_t num_os_windows, capacity;
     OSWindow *callback_os_window;
-    bool is_wayland;
+    bool is_wayland, is_apple;
     bool has_render_frames;
     bool debug_rendering, debug_font_fallback;
     bool has_pending_resizes, has_pending_closes;
@@ -414,7 +419,7 @@ void remove_main_loop_timer(id_type timer_id);
 void update_main_loop_timer(id_type timer_id, monotonic_t interval, bool enabled);
 void run_main_loop(tick_callback_fun, void*);
 void stop_main_loop(void);
-void os_window_update_size_increments(OSWindow *window);
+void on_os_window_font_size_change(OSWindow *window, double new_sz);
 void set_os_window_title_from_window(Window *w, OSWindow *os_window);
 void update_os_window_title(OSWindow *os_window);
 void fake_scroll(Window *w, int amount, bool upwards);

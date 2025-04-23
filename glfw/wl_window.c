@@ -43,8 +43,6 @@
 
 #define debug debug_rendering
 
-static GLFWLayerShellConfig layer_shell_config_for_next_window = {0};
-
 static bool
 is_layer_shell(_GLFWwindow *window) { return window->wl.layer_shell.config.type != GLFW_LAYER_SHELL_NONE; }
 
@@ -1038,6 +1036,48 @@ layer_set_properties(_GLFWwindow *window) {
 }
 
 static void
+calculate_layer_size(_GLFWwindow *window, uint32_t *width, uint32_t *height) {
+    const GLFWLayerShellConfig *config = &window->wl.layer_shell.config;
+    GLFWvidmode m = {0};
+    if (window->wl.monitorsCount) _glfwPlatformGetVideoMode(window->wl.monitors[0], &m);
+    const int y_margin = config->requested_bottom_margin + config->requested_top_margin, x_margin = config->requested_left_margin + config->requested_right_margin;
+    const int monitor_width = MAX(0, m.width - x_margin), monitor_height = MAX(0, m.height - y_margin);
+    float xscale = (float)config->expected.xscale, yscale = (float)config->expected.yscale;
+    if (window->wl.window_fully_created) _glfwPlatformGetWindowContentScale(window, &xscale, &yscale);
+    unsigned cell_width, cell_height; double left_edge_spacing, top_edge_spacing, right_edge_spacing, bottom_edge_spacing;
+    config->size_callback((GLFWwindow*)window, xscale, yscale, &cell_width, &cell_height, &left_edge_spacing, &top_edge_spacing, &right_edge_spacing, &bottom_edge_spacing);
+    double spacing_x = left_edge_spacing + right_edge_spacing;
+    double spacing_y = top_edge_spacing + bottom_edge_spacing;
+    if (config->type == GLFW_LAYER_SHELL_BACKGROUND) {
+        if (!*width) *width = monitor_width;
+        if (!*height) *height = monitor_height;
+        return;
+    }
+    debug("Calculating layer shell window size at scale: %f\n", xscale);
+    const unsigned xsz = config->x_size_in_pixels ? (unsigned)(config->x_size_in_pixels * xscale) : (cell_width * config->x_size_in_cells);
+    const unsigned ysz = config->y_size_in_pixels ? (unsigned)(config->y_size_in_pixels * yscale) : (cell_height * config->y_size_in_cells);
+    if (config->edge == GLFW_EDGE_LEFT || config->edge == GLFW_EDGE_RIGHT) {
+        if (!*height) *height = monitor_height;
+        double spacing = spacing_x;
+        spacing += xsz / xscale;
+        *width = (uint32_t)(1. + spacing);
+    } else if (config->edge == GLFW_EDGE_TOP || config->edge == GLFW_EDGE_BOTTOM) {
+        if (!*width) *width = monitor_width;
+        double spacing = spacing_y;
+        spacing += ysz / yscale;
+        *height = (uint32_t)(1. + spacing);
+    } else if (config->edge == GLFW_EDGE_CENTER) {
+        if (!*width) *width = monitor_width;
+        if (!*height) *height = monitor_height;
+    } else {
+        spacing_x += xsz / xscale;
+        spacing_y += ysz / yscale;
+        *width = (uint32_t)(1. + spacing_x);
+        *height = (uint32_t)(1. + spacing_y);
+    }
+}
+
+static void
 layer_surface_handle_configure(void* data, struct zwlr_layer_surface_v1* surface, uint32_t serial, uint32_t width, uint32_t height) {
     debug("Layer shell configure event: width: %u height: %u\n", width, height);
     _GLFWwindow* window = data;
@@ -1049,8 +1089,7 @@ layer_surface_handle_configure(void* data, struct zwlr_layer_surface_v1* surface
     }
     GLFWvidmode m = {0};
     if (window->wl.monitorsCount) _glfwPlatformGetVideoMode(window->wl.monitors[0], &m);
-    window->wl.layer_shell.config.size_callback(
-            (GLFWwindow*)window, &window->wl.layer_shell.config, m.width, m.height, &width, &height);
+    calculate_layer_size(window, &width, &height);
     zwlr_layer_surface_v1_ack_configure(surface, serial);
     if ((int)width != window->wl.width || (int)height != window->wl.height) {
         debug("Layer shell size changed to %ux%u in layer_surface_handle_configure\n", width, height);
@@ -1104,6 +1143,7 @@ create_layer_shell_surface(_GLFWwindow *window) {
     layer_set_properties(window);
     commit_window_surface(window);
     wl_display_roundtrip(_glfw.wl.display);
+    window->wl.created = true;
 #undef ls
     return true;
 }
@@ -1175,6 +1215,7 @@ create_window_desktop_surface(_GLFWwindow* window)
 
     commit_window_surface(window);
     wl_display_roundtrip(_glfw.wl.display);
+    window->wl.created = true;
 
     return true;
 }
@@ -1361,13 +1402,11 @@ attach_opengl_context_to_window(_GLFWwindow *window, const _GLFWctxconfig *ctxco
     return true;
 }
 
-int _glfwPlatformCreateWindow(_GLFWwindow* window,
-                              const _GLFWwndconfig* wndconfig,
-                              const _GLFWctxconfig* ctxconfig,
-                              const _GLFWfbconfig* fbconfig)
-{
-    window->wl.layer_shell.config = layer_shell_config_for_next_window;
-    memset(&layer_shell_config_for_next_window, 0, sizeof(layer_shell_config_for_next_window));
+int _glfwPlatformCreateWindow(
+    _GLFWwindow* window, const _GLFWwndconfig* wndconfig, const _GLFWctxconfig* ctxconfig, const _GLFWfbconfig* fbconfig,
+    const GLFWLayerShellConfig *lsc
+) {
+    window->wl.layer_shell.config = lsc ? *lsc : (GLFWLayerShellConfig){0};
     csd_initialize_metrics(window);
     window->wl.transparent = fbconfig->transparent;
     strncpy(window->wl.appId, wndconfig->wl.appId, sizeof(window->wl.appId));
@@ -1376,21 +1415,16 @@ int _glfwPlatformCreateWindow(_GLFWwindow* window,
     if (!createSurface(window, wndconfig)) return false;
     if (wndconfig->title) window->wl.title = _glfw_strdup(wndconfig->title);
     if (wndconfig->maximized) window->wl.maximize_on_first_show = true;
-
-    if (wndconfig->visible)
-    {
-        if (!create_window_desktop_surface(window))
-            return false;
-
+    if (wndconfig->visible) {
+        if (!create_window_desktop_surface(window)) return false;
         window->wl.visible = true;
-    }
-    else
-    {
+    } else {
+        window->wl.visible = false;
         window->wl.xdg.surface = NULL;
         window->wl.xdg.toplevel = NULL;
         window->wl.layer_shell.zwlr_layer_surface_v1 = NULL;
-        window->wl.visible = false;
     }
+
 
     window->wl.currentCursor = NULL;
     // Don't set window->wl.cursorTheme to NULL here.
@@ -1685,29 +1719,37 @@ void _glfwPlatformMaximizeWindow(_GLFWwindow* window)
 void _glfwPlatformShowWindow(_GLFWwindow* window)
 {
     if (!window->wl.visible) {
-        if (!is_layer_shell(window)) create_window_desktop_surface(window);
-        window->wl.visible = true;
-        wl_surface_commit(window->wl.surface);
+        if (!window->wl.created) {
+            create_window_desktop_surface(window);
+            window->wl.visible = true;
+        } else {
+            // workaround for kwin layer shell bug: https://bugs.kde.org/show_bug.cgi?id=503121
+            if (is_layer_shell(window)) layer_set_properties(window);
+            window->wl.visible = true;
+            commit_window_surface(window);
+        }
+        debug("Window %llu mapped waiting for configure event from compositor\n", window->id);
     }
 }
 
 void _glfwPlatformHideWindow(_GLFWwindow* window)
 {
     if (!window->wl.visible) return;
-    if (is_layer_shell(window)) {
-        wl_surface_attach(window->wl.surface, NULL, 0, 0);
-    } else {
-        if (window->wl.xdg.toplevel) {
-            xdg_toplevel_destroy(window->wl.xdg.toplevel);
-            xdg_surface_destroy(window->wl.xdg.surface);
-        }
-        window->wl.xdg.toplevel = NULL;
-        window->wl.xdg.surface = NULL;
-    }
+    wl_surface_attach(window->wl.surface, NULL, 0, 0);
     window->wl.once.surface_configured = false;
     window->swaps_disallowed = true;
     window->wl.visible = false;
-    wl_surface_commit(window->wl.surface);
+    commit_window_surface(window);
+    debug("Window %llu unmapped\n", window->id);
+}
+
+bool
+_glfwPlatformSetLayerShellConfig(_GLFWwindow* window, const GLFWLayerShellConfig *value) {
+    if (!is_layer_shell(window)) return false;
+    if (value) window->wl.layer_shell.config = *value;
+    layer_set_properties(window);
+    commit_window_surface(window);
+    return true;
 }
 
 static void
@@ -2836,10 +2878,6 @@ GLFWAPI bool glfwWaylandSetTitlebarColor(GLFWwindow *handle, uint32_t color, boo
 GLFWAPI void glfwWaylandRedrawCSDWindowTitle(GLFWwindow *handle) {
     _GLFWwindow* window = (_GLFWwindow*) handle;
     if (csd_change_title(window)) commit_window_surface_if_safe(window);
-}
-
-GLFWAPI void glfwWaylandSetupLayerShellForNextWindow(const GLFWLayerShellConfig *c) {
-    layer_shell_config_for_next_window = *c;
 }
 
 GLFWAPI GLFWLayerShellConfig* glfwWaylandLayerShellConfig(GLFWwindow *handle) {

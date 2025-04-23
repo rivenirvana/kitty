@@ -68,9 +68,7 @@ Make a Quake like quick access terminal
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. versionadded:: 0.42.0
-   Support for quake mode, works only on Wayland, except for GNOME. On KDE
-   because of a `bug in kwin <https://bugs.kde.org/show_bug.cgi?id=503121>`__,
-   the terminal appears and hides only once, after that it does not re-appear.
+   Support for quake mode, works only on Wayland, except for GNOME.
 
 This kitten can be used to make a quick access terminal, that appears and
 disappears at a key press. To do so use the following command::
@@ -89,6 +87,38 @@ You can use the various panel options to configure the size, appearance and
 position of the quick access panel. In particular, the :option:`kitty +kitten panel --config` and
 :option:`kitty +kitten panel --override` options can be used to theme the terminal appropriately,
 making it look different from regular kitty terminal instances.
+
+.. note::
+   If you want to start the quake terminal hidden, use
+   :option:`kitty +kitten panel --start-as-hidden`, useful if you are starting it in the background
+   during computer startup.
+
+
+Controlling panels via remote control
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can control panels via the kitty :doc:`remote control </remote-control>` facility. Create a panel
+with remote control enabled::
+
+    kitty +kitten panel -o allow_remote_control=socket-only --lines=2 \
+        --listen-on=unix:/tmp/panel kitten run-shell
+
+
+Now you can control this panel using remote control, for example to show/hide
+it, use::
+
+    kitten @ --to=unix:/tmp/panel resize-os-window --action=toggle-visibility
+
+To move the panel to the bottom of the screen and increase its height::
+
+    kitten @ --to=unix:/tmp/panel resize-os-window --action=os-panel \
+        --incremental edge=bottom lines=4
+
+To create a new panel running the program top, in the same instance
+(like creating a new OS window)::
+
+    kitten @ --to=unix:/tmp/panel launch --type=os-panel --os-panel edge=top \
+        --os-panel lines=8 top
 
 
 .. include:: ../generated/cli-kitten-panel.rst

@@ -407,8 +407,12 @@ handle_option_value:
                 }
             } else {
                 char buf[2] = {0};
+                current_option_expecting_argument[0] = 0;
                 for (int i = 1; arg[i] != 0; i++) {
                     switch(arg[i]) {
+                        case '=':
+                            arg = arg + i + 1;
+                            goto handle_option_value;
                         case 'v': opts.version_requested = true; break;
                         case '1': opts.single_instance = true; break;
                         default:
@@ -435,7 +439,9 @@ handle_option_value:
             if (opts.instance_group && opts.instance_group[0]) {
                 snprintf(igbuf, sizeof(igbuf), "%s-%s", instance_group_prefix, opts.instance_group ? opts.instance_group : "");
                 opts.instance_group = igbuf;
-            } opts.instance_group = instance_group_prefix;
+            } else {
+                opts.instance_group = instance_group_prefix;
+            }
         }
         single_instance_main(argc, argv, &opts);
     }

@@ -1652,13 +1652,21 @@ void _glfwPlatformUpdateIMEState(_GLFWwindow *w, const GLFWIMEUpdateEvent *ev) {
 
 - (BOOL)canBecomeKeyWindow
 {
+    if (glfw_window && glfw_window->ns.layer_shell.is_active) {
+        if (glfw_window->ns.layer_shell.config.type == GLFW_LAYER_SHELL_BACKGROUND) return NO;
+        switch(glfw_window->ns.layer_shell.config.focus_policy) {
+            case GLFW_FOCUS_NOT_ALLOWED: return NO;
+            case GLFW_FOCUS_EXCLUSIVE: return YES;
+            case GLFW_FOCUS_ON_DEMAND: return YES;
+        }
+    }
     // Required for NSWindowStyleMaskBorderless windows
     return YES;
 }
 
 - (BOOL)canBecomeMainWindow
 {
-    return YES;
+    return !glfw_window->ns.layer_shell.is_active || glfw_window->ns.layer_shell.config.type != GLFW_LAYER_SHELL_BACKGROUND;
 }
 
 static void
@@ -1819,12 +1827,12 @@ static bool createNativeWindow(_GLFWwindow* window,
 //////                       GLFW platform API                      //////
 //////////////////////////////////////////////////////////////////////////
 
-int _glfwPlatformCreateWindow(_GLFWwindow* window,
-                              const _GLFWwndconfig* wndconfig,
-                              const _GLFWctxconfig* ctxconfig,
-                              const _GLFWfbconfig* fbconfig)
-{
+int _glfwPlatformCreateWindow(_GLFWwindow* window, const _GLFWwndconfig* wndconfig, const _GLFWctxconfig* ctxconfig, const _GLFWfbconfig* fbconfig, const GLFWLayerShellConfig *lsc) {
     window->ns.deadKeyState = 0;
+    if (lsc) {
+        window->ns.layer_shell.is_active = true;
+        window->ns.layer_shell.config = *lsc;
+    } else window->ns.layer_shell.is_active = false;
     if (!_glfw.ns.finishedLaunching)
     {
         [NSApp run];
@@ -1906,6 +1914,78 @@ void _glfwPlatformDestroyWindow(_GLFWwindow* window)
     window->ns.object = nil;
 }
 
+static NSScreen*
+screen_for_window_center(_GLFWwindow *window) {
+    NSRect windowFrame = [window->ns.object frame];
+    NSPoint windowCenter = NSMakePoint(NSMidX(windowFrame), NSMidY(windowFrame));
+    for (NSScreen *screen in [NSScreen screens]) {
+        if (NSPointInRect(windowCenter, [screen frame])) {
+            return screen;
+        }
+    }
+    return NSScreen.mainScreen;
+}
+
+bool
+_glfwPlatformSetLayerShellConfig(_GLFWwindow* window, const GLFWLayerShellConfig *value) {
+#define config window->ns.layer_shell.config
+#define nswindow window->ns.object
+    window->resizable = false;
+    if (value) config = *value;
+    const bool is_transparent = ![nswindow isOpaque];
+    int background_blur = config.related.background_blur;
+    if (!is_transparent || config.related.background_opacity >= 1.f) { background_blur = 0; }
+    [nswindow setBackgroundColor:nil];
+    _glfwPlatformSetWindowBlur(window, background_blur);
+    window->ns.titlebar_hidden = true;
+    window->decorated = false;
+    [nswindow setTitlebarAppearsTransparent:false];
+    [nswindow setHasShadow:false];
+    [nswindow setTitleVisibility:NSWindowTitleHidden];
+    NSColorSpace *cs = nil;
+    switch (config.related.color_space) {
+        case SRGB_COLORSPACE: cs = [NSColorSpace sRGBColorSpace]; break;
+        case DISPLAY_P3_COLORSPACE: cs = [NSColorSpace displayP3ColorSpace]; break;
+        case DEFAULT_COLORSPACE: cs = nil; break;  // using deviceRGBColorSpace causes a hang when transitioning to fullscreen
+    }
+    [nswindow setColorSpace:cs];
+    [[nswindow standardWindowButton: NSWindowCloseButton] setHidden:true];
+    [[nswindow standardWindowButton: NSWindowMiniaturizeButton] setHidden:true];
+    [[nswindow standardWindowButton: NSWindowZoomButton] setHidden:true];
+    [nswindow setStyleMask:NSWindowStyleMaskBorderless];
+    // HACK: Changing the style mask can cause the first responder to be cleared
+    [nswindow makeFirstResponder:window->ns.view];
+    NSScreen *screen = screen_for_window_center(window);
+    unsigned cell_width, cell_height; double left_edge_spacing, top_edge_spacing, right_edge_spacing, bottom_edge_spacing;
+    float xscale = (float)config.expected.xscale, yscale = (float)config.expected.yscale;
+    _glfwPlatformGetWindowContentScale(window, &xscale, &yscale);
+    config.size_callback((GLFWwindow*)window, xscale, yscale, &cell_width, &cell_height, &left_edge_spacing, &top_edge_spacing, &right_edge_spacing, &bottom_edge_spacing);
+    CGFloat x = NSMinX(screen.visibleFrame), y = NSMinY(screen.visibleFrame) + 1, width = NSWidth(screen.visibleFrame), height = NSHeight(screen.visibleFrame);
+    CGFloat dock_height = NSMinY(screen.visibleFrame) - NSMinY(screen.frame);
+    CGFloat menubar_height = NSHeight(screen.frame) - NSHeight(screen.visibleFrame) - dock_height;
+    // Screen co-ordinate system is with origin in lower left and y increasing upwards and x increasing rightwards
+    // NSLog(@"frame: %@ visibleFrame: %@\n", NSStringFromRect(screen.frame), NSStringFromRect(screen.visibleFrame));
+    NSWindowLevel level = NSScreenSaverWindowLevel - 1;
+    NSWindowAnimationBehavior animation_behavior = NSWindowAnimationBehaviorUtilityWindow;
+    if (config.type == GLFW_LAYER_SHELL_BACKGROUND) {
+        x = NSMinX(screen.frame); height = NSHeight(screen.frame) - menubar_height + 1; y = NSMinY(screen.frame); width = NSWidth(screen.frame);
+        animation_behavior = NSWindowAnimationBehaviorNone;
+        // See: https://stackoverflow.com/questions/4982584/how-do-i-draw-the-desktop-on-mac-os-x/4982619#4982619
+        level = kCGDesktopWindowLevel;
+    }
+
+    x += config.requested_left_margin; width -= config.requested_left_margin + config.requested_right_margin;
+    y += config.requested_bottom_margin; height -= config.requested_top_margin + config.requested_bottom_margin;
+
+    [nswindow setAnimationBehavior:animation_behavior];
+    [nswindow setLevel:level];
+    [nswindow setCollectionBehavior: (NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle)];
+    [nswindow setFrame:NSMakeRect(x, y, width, height) display:YES animate:config.type != GLFW_LAYER_SHELL_BACKGROUND];
+    return true;
+#undef config
+#undef nswindow
+}
+
 void _glfwPlatformSetWindowTitle(_GLFWwindow* window, const char* title)
 {
     if (!title) return;
@@ -1954,6 +2034,7 @@ void _glfwPlatformGetWindowSize(_GLFWwindow* window, int* width, int* height)
 
 void _glfwPlatformSetWindowSize(_GLFWwindow* window, int width, int height)
 {
+    if (window->ns.layer_shell.is_active) return;
     if (window->monitor)
     {
         if (window->monitor->window == window)
@@ -2074,7 +2155,9 @@ void _glfwPlatformMaximizeWindow(_GLFWwindow* window)
 
 void _glfwPlatformShowWindow(_GLFWwindow* window)
 {
-    [window->ns.object orderFront:nil];
+    if (window->ns.layer_shell.is_active && window->ns.layer_shell.config.type == GLFW_LAYER_SHELL_BACKGROUND) {
+        [window->ns.object orderBack:nil];
+    } else [window->ns.object orderFront:nil];
 }
 
 void _glfwPlatformHideWindow(_GLFWwindow* window)
@@ -2096,11 +2179,10 @@ int _glfwPlatformWindowBell(_GLFWwindow* window UNUSED)
 void _glfwPlatformFocusWindow(_GLFWwindow* window)
 {
     // Make us the active application
-    // HACK: This is here to prevent applications using only hidden windows from
-    //       being activated, but should probably not be done every time any
-    //       window is shown
-    [NSApp activateIgnoringOtherApps:YES];
-    [window->ns.object makeKeyAndOrderFront:nil];
+    if ([window->ns.object canBecomeKeyWindow]) {
+        [NSApp activateIgnoringOtherApps:YES];
+        [window->ns.object makeKeyAndOrderFront:nil];
+    }
 }
 
 void _glfwPlatformSetWindowMonitor(_GLFWwindow* window,
@@ -2992,6 +3074,7 @@ GLFWAPI GLFWcocoarenderframefun glfwCocoaSetWindowResizeCallback(GLFWwindow *w, 
 
 GLFWAPI void glfwCocoaSetWindowChrome(GLFWwindow *w, unsigned int color, bool use_system_color, unsigned int system_color, int background_blur, unsigned int hide_window_decorations, bool show_text_in_titlebar, int color_space, float background_opacity, bool resizable) { @autoreleasepool {
     _GLFWwindow* window = (_GLFWwindow*)w;
+    if (window->ns.layer_shell.is_active) return;
     const bool is_transparent = ![window->ns.object isOpaque];
     if (!is_transparent) { background_opacity = 1.0; background_blur = 0; }
     NSColor *background = nil;

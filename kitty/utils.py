@@ -30,7 +30,7 @@ from .constants import (
     shell_path,
     ssh_control_master_template,
 )
-from .fast_data_types import WINDOW_FULLSCREEN, WINDOW_MAXIMIZED, WINDOW_MINIMIZED, WINDOW_NORMAL, Color, Shlex, get_options, monotonic, open_tty
+from .fast_data_types import WINDOW_FULLSCREEN, WINDOW_HIDDEN, WINDOW_MAXIMIZED, WINDOW_MINIMIZED, WINDOW_NORMAL, Color, Shlex, get_options, monotonic, open_tty
 from .fast_data_types import timed_debug_print as _timed_debug_print
 from .types import run_once
 from .typing import AddressFamily, PopenType, StartupCtx
@@ -401,10 +401,19 @@ def parse_address_spec(spec: str) -> tuple[AddressFamily, tuple[str, int] | str,
 
 
 def parse_os_window_state(state: str) -> int:
-    return {
-        'normal': WINDOW_NORMAL, 'maximized': WINDOW_MAXIMIZED, 'minimized': WINDOW_MINIMIZED,
-        'fullscreen': WINDOW_FULLSCREEN, 'fullscreened':WINDOW_FULLSCREEN
-    }[state]
+    match state:
+        case 'normal':
+            return WINDOW_NORMAL
+        case 'maximized':
+            return WINDOW_MAXIMIZED
+        case 'minimized':
+            return WINDOW_MINIMIZED
+        case 'fullscreen' | 'fullscreened':
+            return WINDOW_FULLSCREEN
+        case 'hidden':
+            return WINDOW_HIDDEN
+        case _:
+            return WINDOW_NORMAL
 
 
 def write_all(fd: int, data: str | bytes, block_until_written: bool = True) -> None:
@@ -670,7 +679,7 @@ def system_paths_on_macos() -> tuple[str, ...]:
     def add_from_file(x: str) -> None:
         try:
             f = open(x)
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):
             return
         with f:
             for line in f:
@@ -681,7 +690,7 @@ def system_paths_on_macos() -> tuple[str, ...]:
                         entries.append(line)
     try:
         files = os.listdir('/etc/paths.d')
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError):
         files = []
     for name in sorted(files):
         add_from_file(os.path.join('/etc/paths.d', name))

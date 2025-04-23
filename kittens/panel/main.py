@@ -7,7 +7,7 @@ from contextlib import suppress
 from functools import partial
 from typing import Any, Mapping, Sequence
 
-from kitty.cli import parse_args
+from kitty.cli import listen_on_defn, parse_args
 from kitty.cli_stub import PanelCLIOptions
 from kitty.constants import appname, is_macos, is_wayland, kitten_exe
 from kitty.fast_data_types import (
@@ -31,6 +31,7 @@ from kitty.fast_data_types import (
 from kitty.os_window_size import WindowSizeData, edge_spacing
 from kitty.types import LayerShellConfig
 from kitty.typing import BossType, EdgeLiteral
+from kitty.utils import log_error
 
 OPTIONS = r'''
 --lines
@@ -162,16 +163,24 @@ panel invocations with the same :option:`--instance-group` will result
 in new panels being created in the first panel instance within that group.
 
 
+{listen_on_defn}
+
+
 --toggle-visibility
 type=bool-set
 When set and using :option:`--single-instance` will toggle the visibility of the
 existing panel rather than creating a new one.
 
 
+--start-as-hidden
+type=bool-set
+Start in hidden mode, useful with :option:`--toggle-visibility`.
+
+
 --debug-rendering
 type=bool-set
 For internal debugging use.
-'''.format(appname=appname).format
+'''.format(appname=appname, listen_on_defn=listen_on_defn).format
 
 
 args = PanelCLIOptions()
@@ -302,7 +311,11 @@ def layer_shell_config(opts: PanelCLIOptions) -> LayerShellConfig:
 
 def handle_single_instance_command(boss: BossType, sys_args: Sequence[str], environ: Mapping[str, str], notify_on_os_window_death: str | None = '') -> None:
     from kitty.tabs import SpecialWindow
-    args, items = parse_panel_args(list(sys_args[1:]))
+    try:
+        args, items = parse_panel_args(list(sys_args[1:]))
+    except BaseException as e:
+        log_error(f'Invalid arguments received over single instance socket: {sys_args} with error: {e}')
+        return
     if args.toggle_visibility and boss.os_window_map:
         for os_window_id in boss.os_window_map:
             toggle_os_window_visibility(os_window_id)
@@ -318,8 +331,6 @@ def handle_single_instance_command(boss: BossType, sys_args: Sequence[str], envi
 
 def main(sys_args: list[str]) -> None:
     global args
-    if is_macos:
-        raise SystemExit('Currently the panel kitten is not supported on macOS')
     args, items = parse_panel_args(sys_args[1:])
     if not items:
         raise SystemExit('You must specify the program to run')
@@ -328,21 +339,29 @@ def main(sys_args: list[str]) -> None:
         sys.argv.append('--debug-rendering')
     for config in args.config:
         sys.argv.extend(('--config', config))
-    sys.argv.extend(('--class', args.cls))
+    if not is_macos:
+        sys.argv.extend(('--class', args.cls))
     if args.name:
         sys.argv.extend(('--name', args.name))
+    if args.start_as_hidden:
+        sys.argv.append('--start-as=hidden')
     for override in args.override:
         sys.argv.extend(('--override', override))
     sys.argv.append('--override=linux_display_server=auto')
+    sys.argv.append('--override=macos_quit_when_last_window_closed=yes')
     if args.single_instance:
         sys.argv.append('--single-instance')
+    if args.listen_on:
+        sys.argv.append(f'--listen-on={args.listen_on}')
+
     sys.argv.extend(items)
     from kitty.main import main as real_main
     from kitty.main import run_app
     run_app.cached_values_name = 'panel'
     run_app.layer_shell_config = layer_shell_config(args)
-    run_app.first_window_callback = setup_x11_window
-    run_app.initial_window_size_func = initial_window_size_func
+    if not is_macos:
+        run_app.first_window_callback = setup_x11_window
+        run_app.initial_window_size_func = initial_window_size_func
     real_main()
 
 

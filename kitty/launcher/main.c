@@ -378,6 +378,8 @@ handle_option_value:
                 opts.session = arg;
             } else if (strcmp(current_option_expecting_argument, "instance-group") == 0) {
                 opts.instance_group = arg;
+            } else if (strcmp(current_option_expecting_argument, "detached-log") == 0) {
+                opts.detached_log = arg;
             }
             current_option_expecting_argument[0] = 0;
         } else {
@@ -390,18 +392,24 @@ handle_option_value:
             }
             if (arg[1] == '-') {  // long opt
                 const char *equal = strchr(arg, '=');
+                const char *q = arg + 2;
                 if (equal == NULL) {
-                    if (strcmp(arg+2, "version") == 0) {
+                    if (strcmp(q, "version") == 0) {
                         opts.version_requested = true;
-                    } else if (strcmp(arg+2, "single-instance") == 0) {
+                    } else if (strcmp(q, "single-instance") == 0) {
                         opts.single_instance = true;
-                    } else if (strcmp(arg+2, "wait-for-single-instance-window-close") == 0) {
+                    } else if (strcmp(q, "wait-for-single-instance-window-close") == 0) {
                         opts.wait_for_single_instance_window_close = true;
+                    } else if (strcmp(q, "detach") == 0) {
+                        opts.detach = true;
+                    } else if (strcmp(q, "help") == 0) {
+                        return;
                     } else if (!is_boolean_flag(arg+2)) {
-                        strncpy(current_option_expecting_argument, arg+2, sizeof(current_option_expecting_argument)-1);
+                        strncpy(current_option_expecting_argument, q, sizeof(current_option_expecting_argument)-1);
                     }
                 } else {
-                    memcpy(current_option_expecting_argument, arg+2, equal - (arg + 2));
+                    memcpy(current_option_expecting_argument, q, equal - q);
+                    current_option_expecting_argument[equal - q] = 0;
                     arg = equal + 1;
                     goto handle_option_value;
                 }
@@ -415,6 +423,7 @@ handle_option_value:
                             goto handle_option_value;
                         case 'v': opts.version_requested = true; break;
                         case '1': opts.single_instance = true; break;
+                        case 'h': return;
                         default:
                             buf[0] = arg[i]; buf[1] = 0;
                             if (!is_boolean_flag(buf)) { current_option_expecting_argument[0] = arg[i]; current_option_expecting_argument[1] = 0; }
@@ -431,6 +440,17 @@ handle_option_value:
             printf("kitty %s created by Kovid Goyal\n", KITTY_VERSION);
         }
         exit(0);
+    }
+    if (opts.detach) {
+#define reopen_or_fail(path, mode, which) { errno = 0; if (freopen(path, mode, which) == NULL) { int s = errno; fprintf(stderr, "Failed to redirect %s to %s with error: ", #which, path); errno = s; perror(NULL); exit(1); } }
+        if (!(opts.session && ((opts.session[0] == '-' && opts.session[1] == 0) || strcmp(opts.session, "/dev/stdin") == 0))
+                ) reopen_or_fail("/dev/null", "rb", stdin);
+        if (!opts.detached_log || !opts.detached_log[0]) opts.detached_log = "/dev/null";
+        reopen_or_fail(opts.detached_log, "ab", stdout);
+        reopen_or_fail(opts.detached_log, "ab", stderr);
+#undef reopen_or_fail
+        if (fork() != 0) exit(0);
+        setsid();
     }
     unsetenv("KITTY_SI_DATA");
     if (opts.single_instance) {

@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # License: GPL v3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
-import os
 import sys
 from collections.abc import Callable
 from contextlib import suppress
@@ -136,7 +135,7 @@ choices=not-allowed,exclusive,on-demand
 default=not-allowed
 On a Wayland compositor that supports the wlr layer shell protocol, specify the focus policy for keyboard
 interactivity with the panel. Please refer to the wlr layer shell protocol documentation for more details.
-Ignored on X11 and macOS.
+On macOS, :code:`exclusive` and :code:`on-demand` are currently the same. Ignored on X11.
 
 
 --exclusive-zone
@@ -349,9 +348,6 @@ def handle_single_instance_command(boss: BossType, sys_args: Sequence[str], envi
 def main(sys_args: list[str]) -> None:
     global args
     args, items = parse_panel_args(sys_args[1:])
-    if args.detach:
-        from kitty.utils import detach
-        detach(log_file=args.detached_log or os.devnull)
     sys.argv = ['kitty']
     if args.debug_rendering:
         sys.argv.append('--debug-rendering')
@@ -369,6 +365,8 @@ def main(sys_args: list[str]) -> None:
     sys.argv.append('--override=macos_quit_when_last_window_closed=yes')
     if args.single_instance:
         sys.argv.append('--single-instance')
+    if args.instance_group:
+        sys.argv.append(f'--instance-group={args.instance_group}')
     if args.listen_on:
         sys.argv.append(f'--listen-on={args.listen_on}')
 

@@ -97,7 +97,9 @@ Detailed list of changes
 0.42.0 [future]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- The panel kitten can now be used to :ref:`quake`
+- The :doc:`panel kitten </kittens/panel>` can now be used to :ref:`quake`
+
+- The :doc:`panel kitten </kittens/panel>` now works on macOS as well as Wayland (:iss:`2590`)
 
 - **Behavior change**: Now kitty does full grapheme segmentation following the
   Unicode 16 spec when splitting text into cells (:iss:`8533`)
@@ -126,6 +128,11 @@ Detailed list of changes
 - Fix a regression in 0.36.0 that caused using = with single letter options to
   no longer work correctly (:iss:`8556`)
 
+- Single instance: Preserve environment variables from invoking environment in
+  newly created window (:disc:`8567`)
+
+- Single instance: Reset OS Window class and name in new single instance OS
+  windows (:disc:`8567`)
 
 0.41.1 [2025-04-03]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

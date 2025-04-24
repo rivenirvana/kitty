@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # License: GPL v3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
+import os
 import sys
 from collections.abc import Callable
 from contextlib import suppress
@@ -50,28 +51,28 @@ If it has the suffix :code:`px` then it sets the width of the panel in pixels in
 type=int
 default=0
 Set the top margin for the panel, in pixels. Has no effect for bottom edge panels.
-Only works on a Wayland compositor that supports the wlr layer shell protocol.
+Only works on macOS and Wayland compositors that supports the wlr layer shell protocol.
 
 
 --margin-left
 type=int
 default=0
 Set the left margin for the panel, in pixels. Has no effect for right edge panels.
-Only works on a Wayland compositor that supports the wlr layer shell protocol.
+Only works on macOS and Wayland compositors that supports the wlr layer shell protocol.
 
 
 --margin-bottom
 type=int
 default=0
 Set the bottom margin for the panel, in pixels. Has no effect for top edge panels.
-Only works on a Wayland compositor that supports the wlr layer shell protocol.
+Only works on macOS and Wayland compositors that supports the wlr layer shell protocol.
 
 
 --margin-right
 type=int
 default=0
 Set the right margin for the panel, in pixels. Has no effect for left edge panels.
-Only works on a Wayland compositor that supports the wlr layer shell protocol.
+Only works on macOS and Wayland compositors that supports the wlr layer shell protocol.
 
 
 --edge
@@ -80,14 +81,16 @@ default=top
 Which edge of the screen to place the panel on. Note that some window managers
 (such as i3) do not support placing docked windows on the left and right edges.
 The value :code:`background` means make the panel the "desktop wallpaper". This
-is only supported on Wayland, not X11 and note that when using sway if you set
+is not supported on X11 and note that when using sway if you set
 a background in your sway config it will cover the background drawn using this
 kitten.
-Additionally, there are two Wayland only values: :code:`center` and :code:`none`.
+Additionally, there are two more values: :code:`center` and :code:`none`.
 The value :code:`center` anchors the panel to all sides and covers the entire
-display by default. The panel can be shrunk using the margin parameters.
+display (on macOS the part of the display not covered by titlebar and dock).
+The panel can be shrunk and placed using the margin parameters.
 The value :code:`none` anchors the panel to the top left corner and should be
-placed using the margin parameters.
+placed and using the margin parameters. It's size is set bye :option:`--lines`
+and :option:`--columns`.
 
 
 --layer
@@ -95,7 +98,8 @@ choices=background,bottom,top,overlay
 default=bottom
 On a Wayland compositor that supports the wlr layer shell protocol, specifies the layer
 on which the panel should be drawn. This parameter is ignored and set to
-:code:`background` if :option:`--edge` is set to :code:`background`.
+:code:`background` if :option:`--edge` is set to :code:`background`. On macOS, maps
+these to appropriate NSWindow *levels*.
 
 
 --config -c
@@ -132,6 +136,7 @@ choices=not-allowed,exclusive,on-demand
 default=not-allowed
 On a Wayland compositor that supports the wlr layer shell protocol, specify the focus policy for keyboard
 interactivity with the panel. Please refer to the wlr layer shell protocol documentation for more details.
+Ignored on X11 and macOS.
 
 
 --exclusive-zone
@@ -142,12 +147,14 @@ Please refer to the wlr layer shell documentation for more details on the meanin
 If :option:`--edge` is set to anything other than :code:`center` or :code:`none`, this flag will not have any
 effect unless the flag :option:`--override-exclusive-zone` is also set.
 If :option:`--edge` is set to :code:`background`, this option has no effect.
+Ignored on X11 and macOS.
 
 
 --override-exclusive-zone
 type=bool-set
 On a Wayland compositor that supports the wlr layer shell protocol, override the default exclusive zone.
 This has effect only if :option:`--edge` is set to :code:`top`, :code:`left`, :code:`bottom` or :code:`right`.
+Ignored on X11 and macOS.
 
 
 --single-instance -1
@@ -177,6 +184,16 @@ type=bool-set
 Start in hidden mode, useful with :option:`--toggle-visibility`.
 
 
+--detach
+type=bool-set
+Detach from the controlling terminal, if any, running in an independent child process,
+the parent process exits immediately.
+
+
+--detached-log
+Path to a log file to store STDOUT/STDERR when using :option:`--detach`
+
+
 --debug-rendering
 type=bool-set
 For internal debugging use.
@@ -184,8 +201,8 @@ For internal debugging use.
 
 
 args = PanelCLIOptions()
-help_text = 'Use a command line program to draw a GPU accelerated panel on your X11 desktop'
-usage = 'program-to-run'
+help_text = 'Use a command line program to draw a GPU accelerated panel on your desktop'
+usage = '[cmdline-to-run ...]'
 
 
 def parse_panel_args(args: list[str]) -> tuple[PanelCLIOptions, list[str]]:
@@ -332,8 +349,9 @@ def handle_single_instance_command(boss: BossType, sys_args: Sequence[str], envi
 def main(sys_args: list[str]) -> None:
     global args
     args, items = parse_panel_args(sys_args[1:])
-    if not items:
-        raise SystemExit('You must specify the program to run')
+    if args.detach:
+        from kitty.utils import detach
+        detach(log_file=args.detached_log or os.devnull)
     sys.argv = ['kitty']
     if args.debug_rendering:
         sys.argv.append('--debug-rendering')

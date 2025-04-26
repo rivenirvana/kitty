@@ -20,12 +20,13 @@ from .constants import (
     appname,
     beam_cursor_data_file,
     clear_handled_signals,
-    config_dir,
     glfw_path,
     is_macos,
+    is_quick_access_terminal_app,
     is_wayland,
     kitten_exe,
     kitty_exe,
+    launched_by_launch_services,
     logo_png_file,
     running_in_kitty,
     supports_window_occlusion,
@@ -46,6 +47,7 @@ from .fast_data_types import (
     set_custom_cursor,
     set_default_window_icon,
     set_options,
+    set_use_os_log,
 )
 from .fonts.render import dump_font_debug, set_font_family
 from .options.types import Options
@@ -335,30 +337,6 @@ def setup_profiling() -> Generator[None, None, None]:
             print('To view the graphical call data, use: kcachegrind', cg)
 
 
-def macos_cmdline(argv_args: list[str]) -> list[str]:
-    try:
-        with open(os.path.join(config_dir, 'macos-launch-services-cmdline')) as f:
-            raw = f.read()
-    except FileNotFoundError:
-        return argv_args
-    raw = raw.strip()
-    ans = list(shlex_split(raw))
-    if ans and ans[0] == 'kitty':
-        del ans[0]
-    if '-1' in ans or '--single-instance' in ans:
-        if 'KITTY_SI_DATA' in os.environ:
-            # C code will already have setup single instance
-            log_error(
-                '--single-instance supplied in both command line arguments and macos-launch-services-cmdline,'
-                ' ignoring any --instance-group in macos-launch-services-cmdline')
-        else:
-            # Re-exec with new argv so that the C code that handles single instance
-            # can pick up the modified argv
-            os.environ['KITTY_LAUNCHED_BY_LAUNCH_SERVICES'] = '2'  # so that use_os_log is set in the re-execed process
-            os.execl(kitty_exe(), 'kitty', *(ans + argv_args))
-    return ans + argv_args
-
-
 def expand_listen_on(listen_on: str, from_config_file: bool) -> str:
     if from_config_file and listen_on == 'none':
         return ''
@@ -475,13 +453,10 @@ def set_locale() -> None:
             set_LANG_in_default_env(old_lang)
 
 
-def _main() -> None:
+def kitty_main() -> None:
     running_in_kitty(True)
 
     args = sys.argv[1:]
-    if is_macos and os.environ.pop('KITTY_LAUNCHED_BY_LAUNCH_SERVICES', None) == '1':
-        os.chdir(os.path.expanduser('~'))
-        args = macos_cmdline(args)
     try:
         cwd_ok = os.path.isdir(os.getcwd())
     except Exception:
@@ -519,6 +494,8 @@ def _main() -> None:
         return
     bad_lines: list[BadLine] = []
     opts = create_opts(cli_opts, accumulate_bad_lines=bad_lines)
+    if is_quick_access_terminal_app:
+        opts.macos_hide_from_tasks = True
     setup_environment(opts, cli_opts)
 
     # set_locale on macOS uses cocoa APIs when LANG is not set, so we have to
@@ -548,9 +525,20 @@ def _main() -> None:
         cleanup_ssh_control_masters()
 
 
-def main() -> None:
+
+def main(called_from_panel: bool = False) -> None:
+    global redirected_for_quick_access
     try:
-        _main()
+        if is_macos and launched_by_launch_services and not called_from_panel:
+            with suppress(OSError):
+                os.chdir(os.path.expanduser('~'))
+            set_use_os_log(True)
+            if is_quick_access_terminal_app:
+                from kittens.panel.main import default_macos_quake_cmdline
+                from kittens.panel.main import main as panel_main
+                panel_main(list(shlex_split(default_macos_quake_cmdline))[2:])
+                return
+        kitty_main()
     except Exception:
         import traceback
         tb = traceback.format_exc()

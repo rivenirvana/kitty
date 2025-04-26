@@ -1286,7 +1286,7 @@ def kitty_cli_boolean_options() -> Tuple[str, ...]:
     return tuple(sorted(set(read_bool_options()) | set(read_bool_options('kittens/panel/main.py'))))
 
 
-def build_launcher(args: Options, launcher_dir: str = '.', bundle_type: str = 'source') -> None:
+def build_launcher(args: Options, launcher_dir: str = '.', bundle_type: str = 'source') -> str:
     werror = '' if args.ignore_compiler_warnings else '-pedantic-errors -Werror'
     cflags = f'-Wall {werror} -fpie'.split()
     cppflags = [define(f'WRAPPED_KITTENS=" {wrapped_kittens()} "')]
@@ -1345,13 +1345,13 @@ def build_launcher(args: Options, launcher_dir: str = '.', bundle_type: str = 's
     objects = []
     cppflags.append('-DKITTY_CLI_BOOL_OPTIONS=" ' + ' '.join(kitty_cli_boolean_options()) + ' "')
     cppflags.append('-DKITTY_VERSION="' + '.'.join(map(str, version)) + '"')
-    for src in ('kitty/launcher/main.c', 'kitty/launcher/single-instance.c'):
+    for src in ('kitty/launcher/main.c', 'kitty/launcher/single-instance.c', 'kitty/launcher/cmdline.c'):
         obj = os.path.join(build_dir, src.replace('/', '-').replace('.c', '.o'))
         objects.append(obj)
         cmd = env.cc + cppflags + cflags + ['-c', src, '-o', obj]
         key = CompileKey(src, os.path.basename(obj))
         args.compilation_database.add_command(f'Compiling {emphasis(src)} ...', cmd, partial(newer, obj, src), key=key, keyfile=src)
-    dest = os.path.join(launcher_dir, 'kitty')
+    dest = kitty_exe = os.path.join(launcher_dir, 'kitty')
     link_targets.append(os.path.abspath(dest))
     desc = f'Linking {emphasis("launcher")} ...'
     cmd = env.cc + ldflags + objects + libs + pylib + ['-o', dest]
@@ -1361,6 +1361,7 @@ def build_launcher(args: Options, launcher_dir: str = '.', bundle_type: str = 's
         dsym = f'{dest}.dSYM/Contents/Resources/DWARF/{os.path.basename(dest)}'
         args.compilation_database.add_command(desc, ['dsymutil', dest], partial(newer, dsym, dest), key=LinkKey(dsym), is_post_link=True)
     args.compilation_database.build_all()
+    return kitty_exe
 
 
 # Packaging {{{
@@ -1486,14 +1487,14 @@ MimeType=image/*;application/x-sh;application/x-shellscript;inode/directory;text
     os.symlink(os.path.relpath(launcher, os.path.dirname(in_src_launcher)), in_src_launcher)
 
 
-def macos_info_plist() -> bytes:
+def macos_info_plist(for_quake: str = '') -> bytes:
     import plistlib
     VERSION = '.'.join(map(str, version))
 
     def access(what: str, verb: str = 'would like to access') -> str:
         return f'A program running inside kitty {verb} {what}'
 
-    docs = [
+    docs = [] if for_quake else [
         {
             'CFBundleTypeName': 'Terminal scripts',
             'CFBundleTypeExtensions': ['command', 'sh', 'zsh', 'bash', 'fish', 'tool'],
@@ -1531,7 +1532,7 @@ def macos_info_plist() -> bytes:
         },
     ]
 
-    url_schemes = [
+    url_schemes = [] if for_quake else [
         {
             'CFBundleURLName': 'File URL',
             'CFBundleURLSchemes': ['file'],
@@ -1586,6 +1587,12 @@ def macos_info_plist() -> bytes:
 
     services = [
         {
+            'NSMenuItem': {'default': for_quake},
+            'NSMessage': 'quickAccessTerminal',
+            'NSRequiredContext': {'NSServiceCategory': 'None'},
+        },
+    ] if for_quake else [
+        {
             'NSMenuItem': {'default': f'New {appname} Tab Here'},
             'NSMessage': 'openTab',
             'NSRequiredContext': {'NSTextContent': 'FilePath'},
@@ -1607,10 +1614,10 @@ def macos_info_plist() -> bytes:
 
     pl = dict(
         # Naming
-        CFBundleName=appname,
-        CFBundleDisplayName=appname,
+        CFBundleName=f'{appname}-quick-access' if for_quake else appname,
+        CFBundleDisplayName=f'{appname}-quick-access' if for_quake else appname,
         # Identification
-        CFBundleIdentifier=f'net.kovidgoyal.{appname}',
+        CFBundleIdentifier=f'net.kovidgoyal.{appname}' + ('-quick-access' if for_quake else ''),
         # Bundle Version Info
         CFBundleVersion=VERSION,
         CFBundleShortVersionString=VERSION,
@@ -1624,7 +1631,7 @@ def macos_info_plist() -> bytes:
         CFBundleSignature='????',
         LSApplicationCategoryType='public.app-category.utilities',
         # App Execution
-        CFBundleExecutable=appname,
+        CFBundleExecutable=quake_name if for_quake else appname,
         LSEnvironment={'KITTY_LAUNCHED_BY_LAUNCH_SERVICES': '1'},
         LSRequiresNativeExecution=True,
         NSSupportsSuddenTermination=False,
@@ -1670,6 +1677,9 @@ def macos_info_plist() -> bytes:
         # Speech
         NSSpeechRecognitionUsageDescription=access('speech recognition.'),
     )
+    if for_quake:
+        # exclude from dock and menubar
+        pl['LSBackgroundOnly'] = True
     return plistlib.dumps(pl)
 
 
@@ -1694,6 +1704,27 @@ def create_macos_app_icon(where: str = 'Resources') -> None:
         ]])
 
 
+quake_name = f'{appname}-quick-access'
+
+
+def create_quick_access_bundle(kapp: str, quake_desc: str = 'Quick access to kitty') -> None:
+    qapp = os.path.join(kapp, 'Contents', f'{quake_name}.app')
+    base_exe_dir = os.path.join(kapp, 'Contents/MacOS')
+    if os.path.exists(qapp):
+        shutil.rmtree(qapp)
+    bin_dir = os.path.join(qapp, 'Contents/MacOS')
+    os.makedirs(bin_dir)
+    with open(os.path.join(qapp, 'Contents/Info.plist'), 'wb') as f:
+        f.write(macos_info_plist(quake_desc))
+    for exe in os.listdir(base_exe_dir):
+        os.symlink(f'../../../MacOS/{exe}', os.path.join(bin_dir, exe))
+    base_exe = os.path.join(base_exe_dir, 'kitty')
+    if os.path.exists(base_exe):  # during freeze launcher is built after bundle is created
+        shutil.copy2(base_exe, os.path.join(bin_dir, quake_name))
+    for x in ('Frameworks', 'Resources'):
+        os.symlink(f'../../{x}', os.path.join(qapp, 'Contents', x))
+
+
 def create_minimal_macos_bundle(args: Options, launcher_dir: str, relocate: bool = False) -> None:
     kapp = os.path.join(launcher_dir, 'kitty.app')
     if os.path.exists(kapp):
@@ -1715,6 +1746,7 @@ def create_minimal_macos_bundle(args: Options, launcher_dir: str, relocate: bool
             os.remove(kitty_exe)
         os.symlink(os.path.join(os.path.relpath(bin_dir, launcher_dir), appname), kitty_exe)
     create_macos_app_icon(resources_dir)
+    create_quick_access_bundle(kapp, 'Quick access to kitty built from source')
 
 
 def create_macos_bundle_gunk(dest: str, for_freeze: bool, args: Options) -> str:
@@ -1741,6 +1773,7 @@ def create_macos_bundle_gunk(dest: str, for_freeze: bool, args: Options) -> str:
             raise SystemExit('kitten not built cannot create macOS bundle')
         os.symlink(os.path.relpath(kitten_exe, os.path.dirname(in_src_launcher)),
                    os.path.join(os.path.dirname(in_src_launcher), os.path.basename(kitten_exe)))
+    create_quick_access_bundle(dest)
     return str(kitty_exe)
 
 
@@ -2145,7 +2178,7 @@ def macos_freeze(args: Options, launcher_dir: str, only_frozen_launcher: bool = 
             args.compilation_database = cdb
             init_env_from_args(args, native_optimizations=False)
             if only_frozen_launcher:
-                build_launcher(args, launcher_dir=launcher_dir, bundle_type=bundle_type)
+                kitty_exe_path = build_launcher(args, launcher_dir=launcher_dir, bundle_type=bundle_type)
             else:
                 build_launcher(args, launcher_dir=launcher_dir)
                 build(args, native_optimizations=False, call_init=False)
@@ -2156,7 +2189,10 @@ def macos_freeze(args: Options, launcher_dir: str, only_frozen_launcher: bool = 
             os.rename(x, arch_specific)
     build_dir = orig_build_dir
     lipo(link_target_map)
-    if not only_frozen_launcher:
+    if only_frozen_launcher:
+        if is_macos:
+            shutil.copy2(kitty_exe_path, os.path.dirname(kitty_exe_path) + f'/../Contents/{quake_name}.app/Contents/MacOS/{quake_name}')
+    else:
         package(args, bundle_type=bundle_type, do_build_all=False)
 
 

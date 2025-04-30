@@ -8,7 +8,9 @@
 #include "shlex.h"
 #include "utils.h"
 #include "launcher.h"
-
+#ifdef __APPLE__
+#include <os/log.h>
+#endif
 
 void
 free_argv_array(argv_array *a) {
@@ -45,17 +47,23 @@ get_argv_from(const char *filename, const char *argv0, argv_array *final_ans) {
     size_t src_sz;
     char* src = read_full_file(filename, &src_sz);
     if (!src) {
+        if (errno == ENOENT || errno == ENOTDIR) return true;
+#ifdef __APPLE__
+        int saved = errno;
+        os_log_error(OS_LOG_DEFAULT, "Failed to read from %{public}s with error: %{darwin.errno}d", filename, errno);
+        errno = saved;
+#endif
         fprintf(stderr, "Failed to read from %s ", filename); perror("with error");
-        return false;
+        return true;
     }
     ShlexState s = {0};
     argv_array ans = {0};
     bool ok = false;
     ans.buf = malloc(src_sz + strlen(argv0) + 64);
-    if (!ans.buf) { errno = ENOMEM; goto end; }
+    if (!ans.buf) goto oom;
     ans.needs_free = true;
-    if (!add_to_argv(&ans, argv0, strlen(argv0))) goto end;
-    if (!alloc_shlex_state(&s, src, src_sz, false)) { errno = ENOMEM; goto end; }
+    if (!add_to_argv(&ans, argv0, strlen(argv0))) goto oom;
+    if (!alloc_shlex_state(&s, src, src_sz, false)) goto oom;
     bool keep_going = true;
     while (keep_going) {
         ssize_t q = next_word(&s);
@@ -64,18 +72,20 @@ get_argv_from(const char *filename, const char *argv0, argv_array *final_ans) {
             case -2: keep_going = false; break;
             default:
                 if (ans.count == 1 && strcmp(s.buf, "kitty") == 0) continue;
-                if (!add_to_argv(&ans, s.buf, q)) { goto end; }
+                if (!add_to_argv(&ans, s.buf, q)) goto oom;
                 break;
         }
     }
     ok = true;
+oom:
+    if (!ok) {
+        errno = ENOMEM;
+        fprintf(stderr, "Failed to read from %s ", filename); perror("with error");
+    }
 end:
     free(src); dealloc_shlex_state(&s);
     if (ok) *final_ans = ans;
-    else {
-        free_argv_array(&ans);
-        fprintf(stderr, "Failed to read from %s ", filename); perror("with error");
-    }
+    else free_argv_array(final_ans);
     return ok;
 }
 

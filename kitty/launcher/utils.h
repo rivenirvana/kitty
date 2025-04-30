@@ -215,19 +215,23 @@ safe_read_stream(void* ptr, size_t size, FILE* stream) {
 
 static char*
 read_full_file(const char* filename, size_t *sz) {
-    FILE* file = fopen(filename, "rb");
+    FILE* file = NULL;
+    errno = EINTR;
+    while (file == NULL && errno == EINTR) file = fopen(filename, "rb");
     if (!file) return NULL;
     fseek(file, 0, SEEK_END);
     unsigned long file_size = ftell(file);
     rewind(file);
     char* buffer = (char*)malloc(file_size + 1); // +1 for the null terminator
     if (!buffer) {
+        errno = EINTR; while (errno == EINTR && fclose(file) != 0);
         errno = ENOMEM;
-        fclose(file);
         return NULL;
     }
     ssize_t q = safe_read_stream(buffer, file_size, file);
-    fclose(file);
+    int saved = errno;
+    errno = EINTR; while (errno == EINTR && fclose(file) != 0);
+    errno = saved;
     if (q < 0) { free(buffer); buffer = NULL; if (sz) *sz = 0; }
     else { if (sz) { *sz = q; } buffer[q] = 0; }
     return buffer;

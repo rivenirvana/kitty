@@ -63,7 +63,6 @@ from .utils import (
     log_error,
     parse_os_window_state,
     safe_mtime,
-    shlex_split,
     startup_notification_handler,
 )
 
@@ -453,7 +452,7 @@ def set_locale() -> None:
             set_LANG_in_default_env(old_lang)
 
 
-def kitty_main() -> None:
+def kitty_main(called_from_panel: bool = False) -> None:
     running_in_kitty(True)
 
     args = sys.argv[1:]
@@ -463,6 +462,7 @@ def kitty_main() -> None:
         cwd_ok = False
     if not cwd_ok:
         os.chdir(os.path.expanduser('~'))
+    cli_flags = None
     if getattr(sys, 'cmdline_args_for_open', False):
         usage: str | None = 'file_or_url ...'
         appname: str | None = 'kitty +open'
@@ -471,8 +471,10 @@ def kitty_main() -> None:
             ' see https://sw.kovidgoyal.net/kitty/open_actions/#scripting-the-opening-of-files-with-kitty-on-macos'
             '\n\nAll the normal kitty options can be used.')
     else:
+        if not called_from_panel:
+            cli_flags = getattr(sys, 'kitty_run_data', {}).get('cli_flags', None)
         usage = msg = appname = None
-    cli_opts, rest = parse_args(args=args, result_class=CLIOptions, usage=usage, message=msg, appname=appname)
+    cli_opts, rest = parse_args(args=args, result_class=CLIOptions, usage=usage, message=msg, appname=appname, preparsed_from_c=cli_flags)
     if getattr(sys, 'cmdline_args_for_open', False):
         setattr(sys, 'cmdline_args_for_open', rest)
         cli_opts.args = []
@@ -532,13 +534,12 @@ def main(called_from_panel: bool = False) -> None:
         if is_macos and launched_by_launch_services and not called_from_panel:
             with suppress(OSError):
                 os.chdir(os.path.expanduser('~'))
-            set_use_os_log(True)
             if is_quick_access_terminal_app:
-                from kittens.panel.main import default_macos_quake_cmdline
-                from kittens.panel.main import main as panel_main
-                panel_main(list(shlex_split(default_macos_quake_cmdline))[2:])
-                return
-        kitty_main()
+                # we were started by launch services, use the kitten to read
+                # the config and re-run
+                os.execl(kitten_exe(), kitten_exe(), 'quick-access-terminal')
+            set_use_os_log(True)
+        kitty_main(called_from_panel)
     except Exception:
         import traceback
         tb = traceback.format_exc()

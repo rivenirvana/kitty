@@ -10,9 +10,11 @@ Make a Quake like quick access terminal
     Overview
     --------------
 
+
+.. include:: ../quake-screenshots.rst
+
 .. versionadded:: 0.42.0
    Works on macOS and Wayland, except for GNOME.
-
 
 This kitten can be used to make a quick access terminal, that appears and
 disappears at a key press. To do so use the following command:
@@ -47,12 +49,6 @@ To make the terminal appear and disappear at a key press:
     window manager. In macOS, go to |macOS| and set a shortcut
     for the :guilabel:`Quick access to kitty` entry.
 
-.. note::
-
-   This kitten uses the :doc:`panel kitten </kittens/panel>` under the
-   hood. You can use the :ref:`techniques described there <remote_control_panel>`
-   for remote controlling the quick access window.
-
 Configuration
 ------------------------
 
@@ -61,6 +57,15 @@ by creating a :file:`quick-access-terminal.conf` file in your
 :ref:`kitty config folder <confloc>`. In particular, you can use the
 :opt:`kitty_conf <kitten-quick_access_terminal.kitty_conf>` option to change
 various kitty settings, just for the quick access window.
+
+.. note::
+
+   This kitten uses the :doc:`panel kitten </kittens/panel>` under the
+   hood. You can use the :ref:`techniques described there <remote_control_panel>`
+   for remote controlling the quick access window, remember to add
+   ``kitty_override allow_remote_control=socket-only`` and ``kitty_override
+   listen_on=unix:/tmp/whatever`` to
+   :file:`quick-access-terminal.conf`.
 
 See below for the supported configuration directives:
 

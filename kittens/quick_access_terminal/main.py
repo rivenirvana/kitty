@@ -19,13 +19,13 @@ opt = definition.add_option
 
 agr('qat', 'Window appearance')
 
-opt('lines', '25', option_type='positive_int',
+opt('lines', '25',
     long_text='''
 The number of lines shown in the window, when the window is along the top or bottom edges of the screen.
 If it has the suffix :code:`px` then it sets the height of the window in pixels instead of lines.
 ''',)
 
-opt('columns', '80', option_type='positive_int',
+opt('columns', '80',
     long_text='''
 The number of columns shown in the window, when the window is along the left or right edges of the screen.
 If it has the suffix :code:`px` then it sets the width of the window in pixels instead of columns.
@@ -109,6 +109,11 @@ Path to a log file to store STDOUT/STDERR when using :option:`--detach`
 --instance-group
 default=quick-access
 The unique name of this quick access terminal Use a different name if you want multiple such terminals.
+
+
+--debug-rendering
+type=bool-set
+For debugging interactions with the compositor/window manager.
 '''
 
 def main(args: list[str]) -> None:

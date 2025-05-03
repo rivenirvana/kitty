@@ -25,18 +25,13 @@ a dock panel showing system information (Linux only).
 
 .. versionadded:: 0.42.0
 
-   Support for macOS (the edge based panels do not prevent other windows from
-   floating over them because of limitations in Cocoa, but background and
-   overlay panels work well)
+   Support for macOS, see :ref:`compatibility matrix <panel_compat>` for details.
+   and X11 (background and overlay).
 
 .. versionadded:: 0.34.0
 
-   Support for Wayland (all compositors supporting the `wlr layer shell protocol <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#compositor-support>`__ which is almost all of them, except GNOME)
-
-.. note::
-
-    On X11, only the ``top`` and ``bottom`` panels are widely supported,
-    the other types depend on the window manager used.
+   Support for Wayland. See :ref:`below <panel_compat>` for which
+   Wayland compositors work.
 
 Using this kitten is simple, for example::
 
@@ -125,3 +120,80 @@ This creates the panel window and runs the ``my-panel.py`` script inside it
 using the Python interpreter that comes bundled with kitty. Unfortunately the
 actual script is not public, but there are :ref:`public projects implementing
 general purpose panels using kitty <panel_projects>`.
+
+
+.. _panel_compat:
+
+Compatibility with various platforms
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. only:: man
+
+   See the HTML documentation for the compatibility matrix.
+
+.. only:: not man
+
+    .. tab:: Wayland
+
+        Below is a list of the status of various Wayland compositors. The panel kitten
+        relies of the `wlr layer shell protocol
+        <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#compositor-support>`__,
+        which is technically supported by almost all Wayland compositors, but the
+        implementation in some of them is quite buggy.
+
+        🟢 **Hyprland**
+           Fully working, no known issues
+
+        🟢 **KDE** (kwin)
+           Fully working, no known issues
+
+        🟠 **Sway**
+           Partially working. Issues include:
+               * Renders its configured background over the background window instead of
+                 under it. This is likely because it uses the wlr protocol for
+                 backgrounds itself.
+               * Hiding a dock panel (unmapping the window) does not release the space
+                 used by the dock.
+
+        🟠 **niri**
+           Breaks when hiding (unmapping) layer shell windows. This means the quick
+           access terminal is non-functional, but background and dock panels work.
+           More technically, keyboard focus gets stuck in the hidden window and when trying
+           to remap the hidden window niri never sends configure events for the remapped surface.
+
+        🟠 **labwc**
+           Breaks when hiding (unmapping) layer shell windows. This means the quick
+           access terminal is non-functional, but background and dock panels work.
+           More technically, when unmapping the surface (attaching a NULL buffer to
+           it) labwc continues to send configure events to the unmapped surface,
+           leading to Wayland protocol errors and a crash of labwc.
+
+        🔴 **GNOME** (mutter)
+           Does not implement the wlr protocol at all, nothing works.
+
+    .. tab:: macOS
+
+        Mostly everything works, with the notable exception that dock panels do not
+        prevent other windows from covering them. This is because Apple does not
+        provide and way to do this in their APIs.
+
+    .. tab:: X11
+
+        Support is highly dependent on the quirks of individual window
+        managers. See the matrix below:
+
+        .. list-table:: Compatibility matrix
+           :header-rows: 1
+           :stub-columns: 1
+
+           * - WM
+             - Desktop
+             - Dock
+             - Quick
+             - Notes
+
+           * - KDE
+             - 🟢
+             - 🟢
+             - 🟢
+             - transparency does not work for :option:`--edge=background <--edge>`

@@ -133,6 +133,8 @@ Compatibility with various platforms
 
 .. only:: not man
 
+    Generated with the help of the :file:`panels.py` test script.
+
     .. tab:: Wayland
 
         Below is a list of the status of various Wayland compositors. The panel kitten
@@ -193,7 +195,25 @@ Compatibility with various platforms
              - Notes
 
            * - KDE
-             - 🟢
+             - 🟠
              - 🟢
              - 🟢
              - transparency does not work for :option:`--edge=background <--edge>`
+
+           * - GNOME
+             - 🟢
+             - 🟢
+             - 🟢
+             -
+
+           * - XFCE
+             - 🟢
+             - 🟢
+             - 🟢
+             -
+
+           * - i3
+             - 🔴
+             - 🟠
+             - 🔴
+             - only top and bottom dock panels, without transparency

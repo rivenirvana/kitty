@@ -158,6 +158,10 @@ Detailed list of changes
 
 - Launch action: Allow using an env var that resolves to a full command-line as the program to launch (:pull:`8613`)
 
+- :ac:`change_font_size` allow multiplying/dividing the current font size in addition to incrementing it (:iss:`8616`)
+
+- Box drawing: Improve appearance of rounder corners giving them a uniform line width (:iss:`8299`)
+
 0.41.1 [2025-04-03]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

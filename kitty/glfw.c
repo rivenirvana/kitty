@@ -70,6 +70,52 @@ on_clipboard_lost(GLFWClipboardType which) {
     call_boss(on_clipboard_lost, "s", which == GLFW_CLIPBOARD ? "clipboard" : "primary");
 }
 
+static bool
+is_continuation_byte(unsigned char byte) {
+    return (byte & 0xC0) == 0x80; // Continuation bytes have the form 10xxxxxx
+}
+
+static int
+utf8_sequence_length(unsigned char byte) {
+    if ((byte & 0x80) == 0) return 1; // 0xxxxxxx: Single-byte ASCII
+    if ((byte & 0xE0) == 0xC0) return 2; // 110xxxxx: Two-byte sequence
+    if ((byte & 0xF0) == 0xE0) return 3; // 1110xxxx: Three-byte sequence
+    if ((byte & 0xF8) == 0xF0) return 4; // 11110xxx: Four-byte sequence
+    return -1; // Invalid first byte
+}
+
+// Function to remove invalid UTF-8 bytes from the end of a string
+static void
+remove_invalid_utf8_from_end(char *str, size_t len) {
+    if (!len) return;
+    // Start from the end of the string and move backward
+    size_t i = len - 1;
+    while (i > 0) {
+        if (is_continuation_byte((unsigned char)str[i])) {
+            // Continue backward to find the start of the potential UTF-8 sequence
+            size_t start = i;
+            while (start > 0 && is_continuation_byte((unsigned char)str[start])) start--;
+            // Check if the sequence is valid
+            int seq_len = utf8_sequence_length((unsigned char)str[start]);
+            if (seq_len > 0 && start + seq_len == len) return; // Valid sequence found, stop trimming
+            // Invalid sequence, trim it
+            str[start] = '\0';
+            len = start;
+            i = start - 1;
+        } else {
+            // Not a continuation byte, check if it's a valid start byte
+            int seq_len = utf8_sequence_length((unsigned char)str[i]);
+            if (seq_len > 0 && i + seq_len == len) return; // Valid sequence found, stop trimming
+            // Invalid byte, trim it
+            str[i] = '\0';
+            len = i;
+            i--;
+        }
+    }
+    // Handle the case where the entire string is invalid
+    if (utf8_sequence_length((unsigned char)str[0]) < 0) str[0] = '\0';
+}
+
 static void
 strip_csi_(const char *title, char *buf, size_t bufsz) {
     enum { NORMAL, IN_ESC, IN_CSI} state = NORMAL;
@@ -99,6 +145,7 @@ strip_csi_(const char *title, char *buf, size_t bufsz) {
         }
     }
     *dest = 0;
+    remove_invalid_utf8_from_end(buf, dest - buf);
 }
 
 
@@ -966,11 +1013,40 @@ do_toggle_fullscreen(OSWindow *w, unsigned int flags, bool restore_sizes) {
 
 static bool
 toggle_fullscreen_for_os_window(OSWindow *w) {
-    if (w && w->handle && !w->is_layer_shell) {
+    if (!w || !w->handle) return false;
+    if (!w->is_layer_shell) {
 #ifdef __APPLE__
         if (!OPT(macos_traditional_fullscreen)) return do_toggle_fullscreen(w, 1, false);
 #endif
         return do_toggle_fullscreen(w, 0, true);
+    }
+    const GLFWLayerShellConfig *prev = glfwGetLayerShellConfig(w->handle);
+    if (!prev) return false;
+    GLFWLayerShellConfig lsc;
+    memcpy(&lsc, prev, sizeof(lsc));
+    if (prev->type == GLFW_LAYER_SHELL_OVERLAY || prev->type == GLFW_LAYER_SHELL_TOP) {
+        if (prev->was_toggled_to_fullscreen) {
+            lsc.edge = prev->previous.edge;
+            lsc.requested_bottom_margin = prev->previous.requested_bottom_margin;
+            lsc.requested_top_margin = prev->previous.requested_top_margin;
+            lsc.requested_left_margin = prev->requested_left_margin;
+            lsc.requested_right_margin = prev->requested_right_margin;
+            lsc.was_toggled_to_fullscreen = false;
+            glfwSetLayerShellConfig(w->handle, &lsc);
+            return true;
+        }
+        if (prev->edge == GLFW_EDGE_TOP || prev->edge == GLFW_EDGE_BOTTOM || prev->edge == GLFW_EDGE_LEFT || prev->edge == GLFW_EDGE_RIGHT) {
+            lsc.edge = GLFW_EDGE_CENTER;
+            lsc.previous.edge = prev->edge;
+            lsc.previous.requested_right_margin = prev->requested_right_margin;
+            lsc.previous.requested_left_margin = prev->requested_left_margin;
+            lsc.previous.requested_top_margin = prev->requested_top_margin;
+            lsc.previous.requested_bottom_margin = prev->requested_bottom_margin;
+            lsc.requested_bottom_margin = 0; lsc.requested_top_margin = 0; lsc.requested_left_margin = 0; lsc.requested_right_margin = 0;
+            lsc.was_toggled_to_fullscreen = true;
+            glfwSetLayerShellConfig(w->handle, &lsc);
+            return true;
+        }
     }
     return false;
 }
@@ -978,11 +1054,15 @@ toggle_fullscreen_for_os_window(OSWindow *w) {
 bool
 is_os_window_fullscreen(OSWindow *w) {
     unsigned int flags = 0;
+    if (!w || !w->handle) return false;
+    if (w->is_layer_shell) {
+        const GLFWLayerShellConfig *c = glfwGetLayerShellConfig(w->handle);
+        return c && c->was_toggled_to_fullscreen;
+    }
 #ifdef __APPLE__
     if (!OPT(macos_traditional_fullscreen)) flags = 1;
 #endif
-    if (w && w->handle) return glfwIsFullscreen(w->handle, flags);
-    return false;
+    return glfwIsFullscreen(w->handle, flags);
 }
 
 static bool
@@ -1001,20 +1081,20 @@ toggle_maximized_for_os_window(OSWindow *w) {
 
 static void
 change_state_for_os_window(OSWindow *w, int state) {
-    if (!w || !w->handle || w->is_layer_shell) return;
+    if (!w || !w->handle) return;
     switch (state) {
         case WINDOW_MAXIMIZED:
-            glfwMaximizeWindow(w->handle);
+            if (!w->is_layer_shell) glfwMaximizeWindow(w->handle);
             break;
         case WINDOW_MINIMIZED:
-            glfwIconifyWindow(w->handle);
+            if (!w->is_layer_shell) glfwIconifyWindow(w->handle);
             break;
         case WINDOW_FULLSCREEN:
             if (!is_os_window_fullscreen(w)) toggle_fullscreen_for_os_window(w);
             break;
         case WINDOW_NORMAL:
             if (is_os_window_fullscreen(w)) toggle_fullscreen_for_os_window(w);
-            else glfwRestoreWindow(w->handle);
+            else if (!w->is_layer_shell) glfwRestoreWindow(w->handle);
             break;
         case WINDOW_HIDDEN:
             glfwHideWindow(w->handle); break;
@@ -2048,6 +2128,22 @@ primary_monitor_size(PYNOARG) {
 }
 
 static PyObject*
+get_monitor_workarea(PYNOARG) {
+    int count = 0;
+    GLFWmonitor **monitors = glfwGetMonitors(&count);
+    if (count <= 0 || !monitors) return PyTuple_New(0);
+    RAII_PyObject(result, PyTuple_New(count)); if (!result) return NULL;
+    for (int i = 0; i < count; i++) {
+        int xpos, ypos, width, height;
+        glfwGetMonitorWorkarea(monitors[i], &xpos, &ypos, &width, &height);
+        PyObject *monitor_workarea = Py_BuildValue("iiii", xpos, ypos, width, height);
+        if (!monitor_workarea) return NULL;
+        PyTuple_SET_ITEM(result, i, monitor_workarea);
+    }
+    return Py_NewRef(result);
+}
+
+static PyObject*
 primary_monitor_content_scale(PYNOARG) {
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     float xscale = 1.0, yscale = 1.0;
@@ -2482,7 +2578,7 @@ layer_shell_config_for_os_window(PyObject *self UNUSED, PyObject *wid) {
     id_type id = PyLong_AsUnsignedLongLong(wid);
     OSWindow *w = os_window_for_id(id);
     if (!w || !w->handle) Py_RETURN_NONE;
-    const GLFWLayerShellConfig *c = glfwWaylandLayerShellConfig(w->handle);
+    const GLFWLayerShellConfig *c = glfwGetLayerShellConfig(w->handle);
     if (!c) Py_RETURN_NONE;
     return layer_shell_config_to_python(c);
 #endif
@@ -2546,6 +2642,7 @@ static PyMethodDef module_methods[] = {
     {"glfw_get_key_name", (PyCFunction)glfw_get_key_name, METH_VARARGS, ""},
     {"glfw_get_system_color_theme", (PyCFunction)glfw_get_system_color_theme, METH_VARARGS, ""},
     {"glfw_primary_monitor_size", (PyCFunction)primary_monitor_size, METH_NOARGS, ""},
+    {"glfw_get_monitor_workarea", (PyCFunction)get_monitor_workarea, METH_NOARGS, ""},
     {"glfw_primary_monitor_content_scale", (PyCFunction)primary_monitor_content_scale, METH_NOARGS, ""},
     {NULL, NULL, 0, NULL}        /* Sentinel */
 };

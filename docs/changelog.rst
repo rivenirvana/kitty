@@ -106,6 +106,20 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
+0.42.1 [future]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- Fix ambiguous width and private use characters not being rendered when used with variable width text-sizing protocol escape codes
+
+- macOS: Quick access terminal: Restore focus to previously active window when hiding the quick access terminal window (:iss:`8627`)
+
+- Wayland: Fix an abort if the terminal program sets a window title longer than 2KB that contains CSI escape sequences and multibyte UTF-8 (:iss:`8619`)
+
+- Quick access terminal: Allow toggling the window to full screen and map using the standard kitty :sc:`toggle_fullscreen` shortcut (:iss:`8626`)
+
+- A new setting :opt:`remember_window_position` to optionally use the position of the last closed kitty OS Window as the position of the first kitty OS Window when running a new kitty instance (:pull:`8601`)
+
+
 0.42.0 [2025-05-11]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

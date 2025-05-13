@@ -476,6 +476,14 @@ choices=normal,fullscreen,maximized,minimized,hidden
 Control how the initial kitty window is created.
 
 
+--position
+The position, for example 10x20, on screen at which to place the first kitty OS Window.
+This may or may not work depending on the policies of the desktop
+environment/window manager. It never works on Wayland.
+See also :opt:`remember_window_position` to have kitty automatically try
+to restore the previous window position.
+
+
 # Debugging options
 
 --version -v

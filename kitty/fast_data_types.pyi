@@ -25,6 +25,7 @@ GLFW_EDGE_BOTTOM: int
 GLFW_EDGE_LEFT: int
 GLFW_EDGE_RIGHT: int
 GLFW_EDGE_CENTER: int
+GLFW_EDGE_CENTER_SIZED: int
 GLFW_EDGE_NONE: int
 GLFW_FOCUS_NOT_ALLOWED: int
 GLFW_FOCUS_EXCLUSIVE: int
@@ -1570,6 +1571,7 @@ def set_os_window_pos(os_window_id: int, x: int, y: int) -> None:
 def get_all_processes() -> Tuple[int, ...]:
     pass
 
+def glfw_get_monitor_names() -> tuple[tuple[str, str], ...]: ...
 
 def num_users() -> int:
     pass

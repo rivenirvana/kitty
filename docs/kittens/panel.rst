@@ -114,11 +114,12 @@ shell.
 
 The Linux dock panel was::
 
-    kitten panel kitty +launch my-panel.py
+    wm bar
 
-This creates the panel window and runs the ``my-panel.py`` script inside it
-using the Python interpreter that comes bundled with kitty. Unfortunately the
-actual script is not public, but there are :ref:`public projects implementing
+This is a custom program I wrote for my personal use. It uses kitty's kitten
+infrastructure to implement the bar in a `few hundred lines of code
+<https://github.com/kovidgoyal/wm/blob/master/bar/main.go>`__.
+This was designed for my personal use only, but, there are :ref:`public projects implementing
 general purpose panels using kitty <panel_projects>`.
 
 
@@ -161,8 +162,8 @@ Compatibility with various platforms
         🟠 **niri**
            Breaks when hiding (unmapping) layer shell windows. This means the quick
            access terminal is non-functional, but background and dock panels work.
-           More technically, keyboard focus gets stuck in the hidden window and when trying
-           to remap the hidden window niri never sends configure events for the remapped surface.
+           More technically, when trying to remap the hidden window niri never sends
+           configure events for the remapped surface.
 
         🟠 **labwc**
            Breaks when hiding (unmapping) layer shell windows. This means the quick

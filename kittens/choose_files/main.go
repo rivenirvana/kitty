@@ -14,6 +14,9 @@ import (
 	"github.com/kovidgoyal/kitty/tools/utils"
 )
 
+// TODO: Comboboxes, multifile selections, change dir, mountpoint crossing
+// options, save file name, file/dir modes
+
 var _ = fmt.Print
 var debugprintln = tty.DebugPrintln
 
@@ -32,16 +35,28 @@ type State struct {
 	exclude_patterns []*regexp.Regexp
 	score_patterns   []ScorePattern
 	search_text      string
+
+	current_idx                            int
+	num_of_matches_at_last_render          int
+	num_of_slots_per_column_at_last_render int
 }
 
-func (s State) BaseDir() string                   { return utils.IfElse(s.base_dir == "", default_cwd, s.base_dir) }
-func (s State) SelectDirs() bool                  { return s.select_dirs }
-func (s State) Multiselect() bool                 { return s.multiselect }
-func (s State) MaxDepth() int                     { return utils.IfElse(s.max_depth < 1, 4, s.max_depth) }
-func (s State) String() string                    { return utils.Repr(s) }
-func (s State) SearchText() string                { return s.search_text }
+func (s State) BaseDir() string    { return utils.IfElse(s.base_dir == "", default_cwd, s.base_dir) }
+func (s State) SelectDirs() bool   { return s.select_dirs }
+func (s State) Multiselect() bool  { return s.multiselect }
+func (s State) MaxDepth() int      { return utils.IfElse(s.max_depth < 1, 4, s.max_depth) }
+func (s State) String() string     { return utils.Repr(s) }
+func (s State) SearchText() string { return s.search_text }
+func (s *State) SetSearchText(val string) {
+	if s.search_text != val {
+		s.search_text = val
+		s.current_idx = 0
+	}
+}
 func (s State) ExcludePatterns() []*regexp.Regexp { return s.exclude_patterns }
 func (s State) ScorePatterns() []ScorePattern     { return s.score_patterns }
+func (s State) CurrentIndex() int                 { return s.current_idx }
+func (s *State) SetCurrentIndex(val int)          { s.current_idx = max(0, val) }
 func (s State) CurrentDir() string {
 	return utils.IfElse(s.current_dir == "", s.BaseDir(), s.current_dir)
 }
@@ -110,7 +125,7 @@ func (h *Handler) OnInitialize() (ans string, err error) {
 
 func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
 	switch {
-	case h.handle_edit_keys(ev):
+	case h.handle_edit_keys(ev), h.handle_result_list_keys(ev):
 		h.draw_screen()
 	case ev.MatchesPressOrRepeat("esc") || ev.MatchesPressOrRepeat("ctrl+c"):
 		h.lp.Quit(1)

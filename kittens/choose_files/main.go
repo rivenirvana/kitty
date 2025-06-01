@@ -3,6 +3,7 @@ package choose_files
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,8 +15,8 @@ import (
 	"github.com/kovidgoyal/kitty/tools/utils"
 )
 
-// TODO: Comboboxes, multifile selections, change dir, mountpoint crossing
-// options, save file name, file/dir modes.
+// TODO: Comboboxes, multifile selections, save file name, file/dir modes. Make
+// window title conditional on mode
 
 var _ = fmt.Print
 var debugprintln = tty.DebugPrintln
@@ -27,14 +28,12 @@ type ScorePattern struct {
 }
 
 type State struct {
-	base_dir         string
-	current_dir      string
-	select_dirs      bool
-	multiselect      bool
-	max_depth        int
-	exclude_patterns []*regexp.Regexp
-	score_patterns   []ScorePattern
-	search_text      string
+	base_dir       string
+	current_dir    string
+	select_dirs    bool
+	multiselect    bool
+	score_patterns []ScorePattern
+	search_text    string
 
 	current_idx                            int
 	num_of_matches_at_last_render          int
@@ -44,7 +43,6 @@ type State struct {
 func (s State) BaseDir() string    { return utils.IfElse(s.base_dir == "", default_cwd, s.base_dir) }
 func (s State) SelectDirs() bool   { return s.select_dirs }
 func (s State) Multiselect() bool  { return s.multiselect }
-func (s State) MaxDepth() int      { return utils.IfElse(s.max_depth < 1, 4, s.max_depth) }
 func (s State) String() string     { return utils.Repr(s) }
 func (s State) SearchText() string { return s.search_text }
 func (s *State) SetSearchText(val string) {
@@ -53,10 +51,19 @@ func (s *State) SetSearchText(val string) {
 		s.current_idx = 0
 	}
 }
-func (s State) ExcludePatterns() []*regexp.Regexp { return s.exclude_patterns }
-func (s State) ScorePatterns() []ScorePattern     { return s.score_patterns }
-func (s State) CurrentIndex() int                 { return s.current_idx }
-func (s *State) SetCurrentIndex(val int)          { s.current_idx = max(0, val) }
+func (s *State) SetCurrentDir(val string) {
+	if q, err := filepath.Abs(val); err == nil {
+		val = q
+	}
+	if s.CurrentDir() != val {
+		s.search_text = ""
+		s.current_idx = 0
+		s.current_dir = val
+	}
+}
+func (s State) ScorePatterns() []ScorePattern { return s.score_patterns }
+func (s State) CurrentIndex() int             { return s.current_idx }
+func (s *State) SetCurrentIndex(val int)      { s.current_idx = max(0, val) }
 func (s State) CurrentDir() string {
 	return utils.IfElse(s.current_dir == "", s.BaseDir(), s.current_dir)
 }
@@ -74,11 +81,7 @@ type Handler struct {
 
 func (h *Handler) draw_screen() (err error) {
 	matches, in_progress := h.get_results()
-	if len(matches) > 0 {
-		h.lp.SetWindowTitle(matches[0].text)
-	} else {
-		h.lp.SetWindowTitle("Select a file") // TODO: make this conditional on mode
-	}
+	h.lp.SetWindowTitle("Select a file") // TODO: make this conditional on mode
 	h.lp.StartAtomicUpdate()
 	defer h.lp.EndAtomicUpdate()
 	h.lp.ClearScreen()
@@ -129,6 +132,35 @@ func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
 		h.draw_screen()
 	case ev.MatchesPressOrRepeat("esc") || ev.MatchesPressOrRepeat("ctrl+c"):
 		h.lp.Quit(1)
+	case ev.MatchesPressOrRepeat("tab"):
+		matches, in_progress := h.get_results()
+		if len(matches) > 0 && !in_progress {
+			if idx := h.state.CurrentIndex(); idx < len(matches) {
+				m := matches[idx].abspath
+				if st, err := os.Stat(m); err == nil {
+					if !st.IsDir() {
+						m = filepath.Dir(m)
+					}
+					h.state.SetCurrentDir(m)
+					return h.draw_screen()
+				}
+			}
+		}
+		h.lp.Beep()
+	case ev.MatchesPressOrRepeat("shift+tab"):
+		curr := h.state.CurrentDir()
+		switch curr {
+		case "/":
+		case ".":
+			if curr, err = os.Getwd(); err == nil && curr != "/" {
+				h.state.SetCurrentDir(filepath.Dir(curr))
+				return h.draw_screen()
+			}
+		default:
+			h.state.SetCurrentDir(filepath.Dir(curr))
+			return h.draw_screen()
+		}
+		h.lp.Beep()
 	}
 	return
 }
@@ -144,21 +176,7 @@ func add(a, b float64) float64  { return a + b }
 func div(a, b float64) float64  { return a / b }
 
 func (h *Handler) set_state_from_config(conf *Config) (err error) {
-	h.state = State{max_depth: int(conf.Max_depth)}
-	h.state.exclude_patterns = make([]*regexp.Regexp, 0, len(conf.Exclude_directory))
-	seen := map[string]*regexp.Regexp{}
-	for _, x := range conf.Exclude_directory {
-		if strings.HasPrefix(x, "!") {
-			delete(seen, x[1:])
-		} else if seen[x] == nil {
-			if pat, err := regexp.Compile(x); err == nil {
-				seen[x] = pat
-			} else {
-				return fmt.Errorf("The exclude directory pattern %#v is invalid: %w", x, err)
-			}
-		}
-	}
-	h.state.exclude_patterns = utils.Values(seen)
+	h.state = State{}
 	fmap := map[string]func(float64, float64) float64{
 		"*=": mult, "+=": add, "-=": sub, "/=": div}
 	h.state.score_patterns = make([]ScorePattern, len(conf.Modify_score))
@@ -198,7 +216,6 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	}
 	switch len(args) {
 	case 0:
-		os.Getwd()
 		if default_cwd, err = os.Getwd(); err != nil {
 			return
 		}
@@ -206,6 +223,10 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 		default_cwd = args[0]
 	default:
 		return 1, fmt.Errorf("Can only specify one directory to search in")
+	}
+	default_cwd = utils.Expanduser(default_cwd)
+	if default_cwd, err = filepath.Abs(default_cwd); err != nil {
+		return
 	}
 	lp.OnInitialize = handler.OnInitialize
 	lp.OnResize = func(old, new_size loop.ScreenSize) (err error) {

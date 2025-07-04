@@ -1,10 +1,13 @@
 package choose_files
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/kovidgoyal/kitty/tools/cli"
@@ -15,7 +18,7 @@ import (
 	"github.com/kovidgoyal/kitty/tools/utils"
 )
 
-// TODO: Comboboxes, multifile selections, save file name, file/dir modes
+// TODO: multifile selections, save file name completion
 
 var _ = fmt.Print
 var debugprintln = tty.DebugPrintln
@@ -33,15 +36,15 @@ const (
 	SELECT_SINGLE_FILE Mode = iota
 	SELECT_MULTIPLE_FILES
 	SELECT_SAVE_FILE
+	SELECT_SAVE_FILES
 	SELECT_SAVE_DIR
 	SELECT_SINGLE_DIR
 	SELECT_MULTIPLE_DIRS
-	SELECT_SAVE_DIR_FOR_FILES // select a dir for saving one or more pre-sent filenames, must be an existing one
 )
 
 func (m Mode) CanSelectNonExistent() bool {
 	switch m {
-	case SELECT_SAVE_FILE, SELECT_SAVE_DIR:
+	case SELECT_SAVE_FILE, SELECT_SAVE_DIR, SELECT_SAVE_FILES:
 		return true
 	}
 	return false
@@ -49,7 +52,7 @@ func (m Mode) CanSelectNonExistent() bool {
 
 func (m Mode) AllowsMultipleSelection() bool {
 	switch m {
-	case SELECT_MULTIPLE_FILES, SELECT_MULTIPLE_DIRS:
+	case SELECT_MULTIPLE_FILES, SELECT_MULTIPLE_DIRS, SELECT_SAVE_FILES:
 		return true
 	}
 	return false
@@ -57,7 +60,7 @@ func (m Mode) AllowsMultipleSelection() bool {
 
 func (m Mode) OnlyDirs() bool {
 	switch m {
-	case SELECT_SINGLE_DIR, SELECT_MULTIPLE_DIRS, SELECT_SAVE_DIR, SELECT_SAVE_DIR_FOR_FILES:
+	case SELECT_SINGLE_DIR, SELECT_MULTIPLE_DIRS, SELECT_SAVE_DIR:
 		return true
 	}
 	return false
@@ -65,7 +68,7 @@ func (m Mode) OnlyDirs() bool {
 
 func (m Mode) SelectFiles() bool {
 	switch m {
-	case SELECT_SINGLE_FILE, SELECT_MULTIPLE_FILES, SELECT_SAVE_FILE:
+	case SELECT_SINGLE_FILE, SELECT_MULTIPLE_FILES, SELECT_SAVE_FILE, SELECT_SAVE_FILES:
 		return true
 	}
 	return false
@@ -85,8 +88,8 @@ func (m Mode) WindowTitle() string {
 		return "Choose an existing directory"
 	case SELECT_MULTIPLE_DIRS:
 		return "Choose one or more directories"
-	case SELECT_SAVE_DIR_FOR_FILES:
-		return "Choose a directory to save multiple files in"
+	case SELECT_SAVE_FILES:
+		return "Choose files to save"
 	}
 	return ""
 }
@@ -105,6 +108,9 @@ type State struct {
 	suggested_save_file_name string
 	window_title             string
 	screen                   Screen
+	current_filter           string
+	filter_map               map[string]Filter
+	filter_names             []string
 
 	save_file_cdir string
 	selections     []string
@@ -113,6 +119,7 @@ type State struct {
 }
 
 func (s State) BaseDir() string    { return utils.IfElse(s.base_dir == "", default_cwd, s.base_dir) }
+func (s State) Filter() Filter     { return s.filter_map[s.current_filter] }
 func (s State) SelectDirs() bool   { return s.select_dirs }
 func (s State) Multiselect() bool  { return s.multiselect }
 func (s State) String() string     { return utils.Repr(s) }
@@ -187,7 +194,11 @@ func (h *Handler) draw_screen() (err error) {
 			h.draw_search_bar(0)
 		}()
 		y := SEARCH_BAR_HEIGHT
-		y += h.draw_results(y, 2, matches, !is_complete)
+		footer_height, err := h.draw_footer()
+		if err != nil {
+			return err
+		}
+		y += h.draw_results(y, footer_height, matches, !is_complete)
 	case SAVE_FILE:
 		err = h.draw_save_file_name_screen()
 	}
@@ -224,7 +235,7 @@ func (h *Handler) OnInitialize() (ans string, err error) {
 	h.lp.AllowLineWrapping(false)
 	h.lp.SetCursorShape(loop.BAR_CURSOR, true)
 	h.lp.StartBracketedPaste()
-	h.result_manager.set_root_dir(h.state.CurrentDir())
+	h.result_manager.set_root_dir(h.state.CurrentDir(), h.state.Filter())
 	h.draw_screen()
 	return
 }
@@ -258,7 +269,7 @@ func (h *Handler) toggle_selection() bool {
 func (h *Handler) change_current_dir(dir string) {
 	if dir != h.state.CurrentDir() {
 		h.state.SetCurrentDir(dir)
-		h.result_manager.set_root_dir(h.state.CurrentDir())
+		h.result_manager.set_root_dir(h.state.CurrentDir(), h.state.Filter())
 		h.state.last_render = render_state{}
 	}
 }
@@ -266,20 +277,26 @@ func (h *Handler) change_current_dir(dir string) {
 func (h *Handler) set_query(q string) {
 	if q != h.state.SearchText() {
 		h.state.SetSearchText(q)
-		h.result_manager.set_query(h.state.SearchText())
+		h.result_manager.set_query(h.state.SearchText(), h.state.Filter())
+		h.state.last_render = render_state{}
+	}
+}
+
+func (h *Handler) set_filter(filter_name string) {
+	if filter_name != h.state.current_filter {
+		h.state.current_filter = filter_name
+		h.result_manager.set_filter(h.state.Filter())
 		h.state.last_render = render_state{}
 	}
 }
 
 func (h *Handler) change_to_current_dir_if_possible() error {
-	matches, _ := h.get_results()
-	if matches.Len() > 0 {
-		m := h.current_abspath()
+	if m := h.current_abspath(); m != "" {
 		if st, err := os.Stat(m); err == nil {
 			if !st.IsDir() {
 				m = filepath.Dir(m)
-				h.change_current_dir(m)
 			}
+			h.change_current_dir(m)
 			return h.draw_screen()
 		}
 	}
@@ -289,11 +306,22 @@ func (h *Handler) change_to_current_dir_if_possible() error {
 
 func (h *Handler) finish_selection() error {
 	if h.state.mode.CanSelectNonExistent() {
-		h.initialize_save_file_name()
+		h.initialize_save_file_name(h.state.suggested_save_file_name)
 		return h.draw_screen()
 	}
 	h.lp.Quit(0)
 	return nil
+}
+
+func (h *Handler) change_filter(delta int) bool {
+	if len(h.state.filter_names) < 2 {
+		return false
+	}
+	idx := slices.Index(h.state.filter_names, h.state.current_filter)
+	idx += delta + len(h.state.filter_names)
+	idx %= len(h.state.filter_names)
+	h.set_filter(h.state.filter_names[idx])
+	return true
 }
 
 func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
@@ -306,6 +334,16 @@ func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
 			h.lp.Quit(1)
 		case ev.MatchesPressOrRepeat("tab"):
 			return h.change_to_current_dir_if_possible()
+		case ev.MatchesPressOrRepeat("ctrl+f"):
+			if h.change_filter(1) {
+				return h.draw_screen()
+			}
+			h.lp.Beep()
+		case ev.MatchesPressOrRepeat("alt+f"):
+			if h.change_filter(-1) {
+				return h.draw_screen()
+			}
+			h.lp.Beep()
 		case ev.MatchesPressOrRepeat("shift+tab"):
 			curr := h.state.CurrentDir()
 			switch curr {
@@ -330,15 +368,17 @@ func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
 				return h.draw_screen()
 			}
 		case ev.MatchesPressOrRepeat("enter"):
+			m := h.current_abspath()
 			if h.state.mode.SelectFiles() {
-				m := h.current_abspath()
-				var s os.FileInfo
-				if s, err = os.Stat(m); err != nil {
-					h.lp.Beep()
-					return nil
-				}
-				if s.IsDir() {
-					return h.change_to_current_dir_if_possible()
+				if m != "" {
+					var s os.FileInfo
+					if s, err = os.Stat(m); err != nil {
+						h.lp.Beep()
+						return nil
+					}
+					if s.IsDir() {
+						return h.change_to_current_dir_if_possible()
+					}
 				}
 			}
 			if h.add_selection_if_possible() {
@@ -347,7 +387,13 @@ func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
 				}
 				return h.draw_screen()
 			} else {
-				h.lp.Beep()
+				if h.state.mode.CanSelectNonExistent() {
+					t := h.state.SearchText()
+					h.initialize_save_file_name(utils.IfElse(t == "", h.state.suggested_save_file_name, t))
+					return h.draw_screen()
+				} else {
+					h.lp.Beep()
+				}
 			}
 		}
 	case SAVE_FILE:
@@ -384,15 +430,15 @@ func (h *Handler) set_state_from_config(_ *Config, opts *Options) (err error) {
 		h.state.mode = SELECT_MULTIPLE_DIRS
 	case "save-dir":
 		h.state.mode = SELECT_SAVE_DIR
-	case "dir-for-files":
-		h.state.mode = SELECT_SAVE_DIR_FOR_FILES
+	case "save-files":
+		h.state.mode = SELECT_SAVE_FILES
 	default:
 		h.state.mode = SELECT_SINGLE_FILE
 	}
 	h.state.suggested_save_file_name = opts.SuggestedSaveFileName
 	if opts.SuggestedSaveFilePath != "" {
 		switch h.state.mode {
-		case SELECT_SAVE_FILE, SELECT_SAVE_DIR, SELECT_SAVE_DIR_FOR_FILES:
+		case SELECT_SAVE_FILE, SELECT_SAVE_DIR:
 			if s, err := os.Stat(opts.SuggestedSaveFilePath); err == nil {
 				if (s.IsDir() && h.state.mode != SELECT_SAVE_FILE) || (!s.IsDir() && h.state.mode == SELECT_SAVE_FILE) {
 					if h.state.AddSelection(opts.SuggestedSaveFileName) {
@@ -402,12 +448,83 @@ func (h *Handler) set_state_from_config(_ *Config, opts *Options) (err error) {
 			}
 		}
 	}
+	h.state.filter_map = nil
+	h.state.current_filter = ""
+	if len(opts.FileFilter) > 0 {
+		has_all_files := false
+		fmap := make(map[string][]Filter)
+		seen := utils.NewSet[string](len(opts.FileFilter))
+		for _, x := range opts.FileFilter {
+			f, ferr := NewFilter(x)
+			if ferr != nil {
+				return ferr
+			}
+			if f.Match == nil {
+				has_all_files = true
+			}
+			if h.state.current_filter == "" {
+				h.state.current_filter = f.Name
+			}
+			fmap[f.Name] = append(fmap[f.Name], *f)
+			if !seen.Has(f.Name) {
+				seen.Add(f.Name)
+				h.state.filter_names = append(h.state.filter_names, f.Name)
+			}
+		}
+		if !has_all_files {
+			af, _ := NewFilter("glob:*:All files")
+			fmap[af.Name] = append(fmap[af.Name], *af)
+			if !seen.Has(af.Name) {
+				h.state.filter_names = append(h.state.filter_names, af.Name)
+			}
+		}
+		h.state.filter_map = make(map[string]Filter)
+		for name, filters := range fmap {
+			h.state.filter_map[name] = CombinedFilter(filters...)
+		}
+	}
 	return
 }
 
 var default_cwd string
 
 func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
+	write_output := func(selections []string, interrupted bool) {
+		payload := make(map[string]any)
+		if err != nil {
+			if opts.WriteOutputTo != "" {
+				m := fmt.Sprint(err)
+				if opts.OutputFormat == "json" {
+					payload["error"] = m
+					b, _ := json.MarshalIndent(payload, "", "  ")
+					m = string(b)
+				}
+				os.WriteFile(opts.WriteOutputTo, []byte(m), 0600)
+			}
+			return
+		}
+		if interrupted {
+			if opts.WriteOutputTo != "" {
+				if opts.OutputFormat == "json" {
+					payload["interrupted"] = true
+					b, _ := json.MarshalIndent(payload, "", "  ")
+					os.WriteFile(opts.WriteOutputTo, b, 0600)
+				}
+			}
+			return
+		}
+		m := strings.Join(selections, "\n")
+		fmt.Print(m)
+		if opts.WriteOutputTo != "" {
+			if opts.OutputFormat == "json" {
+				payload["paths"] = selections
+				b, _ := json.MarshalIndent(payload, "", "  ")
+				m = string(b)
+			}
+			os.WriteFile(opts.WriteOutputTo, []byte(m), 0600)
+		}
+	}
+
 	conf, err := load_config(opts)
 	if err != nil {
 		return 1, err
@@ -437,7 +554,17 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	if default_cwd, err = filepath.Abs(default_cwd); err != nil {
 		return
 	}
-	lp.OnInitialize = handler.OnInitialize
+	lp.OnInitialize = func() (string, error) {
+		if opts.WritePidTo != "" {
+			if err := utils.AtomicWriteFile(opts.WritePidTo, bytes.NewReader([]byte(strconv.Itoa(os.Getpid()))), 0600); err != nil {
+				return "", err
+			}
+		}
+		if opts.Title != "" {
+			lp.SetWindowTitle(opts.Title)
+		}
+		return handler.OnInitialize()
+	}
 	lp.OnResize = func(old, new_size loop.ScreenSize) (err error) {
 		handler.init_sizes(new_size)
 		return handler.draw_screen()
@@ -454,16 +581,22 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	}
 	err = lp.Run()
 	if err != nil {
+		write_output(nil, false)
 		return 1, err
 	}
 	ds := lp.DeathSignalName()
 	if ds != "" {
 		fmt.Println("Killed by signal: ", ds)
 		lp.KillIfSignalled()
+		write_output(nil, true)
 		return 1, nil
 	}
-	if rc = lp.ExitCode(); rc == 0 {
-		fmt.Print(strings.Join(handler.state.selections, "\n"))
+	rc = lp.ExitCode()
+	switch rc {
+	case 0:
+		write_output(handler.state.selections, false)
+	default:
+		write_output(nil, true)
 	}
 	return
 }

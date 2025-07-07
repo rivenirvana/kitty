@@ -13,6 +13,7 @@ import (
 	"github.com/kovidgoyal/kitty/tools/cli"
 	"github.com/kovidgoyal/kitty/tools/config"
 	"github.com/kovidgoyal/kitty/tools/tty"
+	"github.com/kovidgoyal/kitty/tools/tui"
 	"github.com/kovidgoyal/kitty/tools/tui/loop"
 	"github.com/kovidgoyal/kitty/tools/tui/readline"
 	"github.com/kovidgoyal/kitty/tools/utils"
@@ -116,6 +117,8 @@ type State struct {
 	selections     []string
 	current_idx    CollectionIndex
 	last_render    render_state
+	mouse_state    tui.MouseState
+	redraw_needed  bool
 }
 
 func (s State) BaseDir() string    { return utils.IfElse(s.base_dir == "", default_cwd, s.base_dir) }
@@ -182,9 +185,15 @@ type Handler struct {
 }
 
 func (h *Handler) draw_screen() (err error) {
+	h.state.redraw_needed = false
 	h.lp.StartAtomicUpdate()
-	defer h.lp.EndAtomicUpdate()
+	defer func() {
+		h.state.mouse_state.UpdateHoveredIds()
+		h.state.mouse_state.ApplyHoverStyles(h.lp)
+		h.lp.EndAtomicUpdate()
+	}()
 	h.lp.ClearScreen()
+	h.state.mouse_state.ClearCellRegions()
 	switch h.state.screen {
 	case NORMAL:
 		matches, is_complete := h.get_results()
@@ -402,6 +411,17 @@ func (h *Handler) OnKeyEvent(ev *loop.KeyEvent) (err error) {
 	return
 }
 
+func (h *Handler) OnMouseEvent(event *loop.MouseEvent) (err error) {
+	h.state.redraw_needed = h.state.mouse_state.UpdateState(event)
+	if err = h.state.mouse_state.DispatchEventToHoveredRegions(event); err != nil {
+		return
+	}
+	if h.state.redraw_needed {
+		err = h.draw_screen()
+	}
+	return
+}
+
 func (h *Handler) OnText(text string, from_key_event, in_bracketed_paste bool) (err error) {
 	switch h.state.screen {
 	case NORMAL:
@@ -451,6 +471,7 @@ func (h *Handler) set_state_from_config(_ *Config, opts *Options) (err error) {
 	h.state.filter_map = nil
 	h.state.current_filter = ""
 	if len(opts.FileFilter) > 0 {
+		opts.FileFilter = utils.Uniq(opts.FileFilter)
 		has_all_files := false
 		fmap := make(map[string][]Filter)
 		seen := utils.NewSet[string](len(opts.FileFilter))
@@ -489,7 +510,7 @@ func (h *Handler) set_state_from_config(_ *Config, opts *Options) (err error) {
 var default_cwd string
 
 func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
-	write_output := func(selections []string, interrupted bool) {
+	write_output := func(selections []string, interrupted bool, current_filter string) {
 		payload := make(map[string]any)
 		if err != nil {
 			if opts.WriteOutputTo != "" {
@@ -518,6 +539,9 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 		if opts.WriteOutputTo != "" {
 			if opts.OutputFormat == "json" {
 				payload["paths"] = selections
+				if current_filter != "" {
+					payload["current_filter"] = current_filter
+				}
 				b, _ := json.MarshalIndent(payload, "", "  ")
 				m = string(b)
 			}
@@ -533,6 +557,7 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	if err != nil {
 		return 1, err
 	}
+	lp.MouseTrackingMode(loop.FULL_MOUSE_TRACKING)
 	handler := Handler{lp: lp, err_chan: make(chan error, 8), rl: readline.New(lp, readline.RlInit{
 		Prompt: "> ", ContinuationPrompt: ". ",
 	})}
@@ -571,6 +596,7 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	}
 	lp.OnKeyEvent = handler.OnKeyEvent
 	lp.OnText = handler.OnText
+	lp.OnMouseEvent = handler.OnMouseEvent
 	lp.OnWakeup = func() (err error) {
 		select {
 		case err = <-handler.err_chan:
@@ -581,22 +607,22 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	}
 	err = lp.Run()
 	if err != nil {
-		write_output(nil, false)
+		write_output(nil, false, "")
 		return 1, err
 	}
 	ds := lp.DeathSignalName()
 	if ds != "" {
 		fmt.Println("Killed by signal: ", ds)
 		lp.KillIfSignalled()
-		write_output(nil, true)
+		write_output(nil, true, "")
 		return 1, nil
 	}
 	rc = lp.ExitCode()
 	switch rc {
 	case 0:
-		write_output(handler.state.selections, false)
+		write_output(handler.state.selections, false, handler.state.current_filter)
 	default:
-		write_output(nil, true)
+		write_output(nil, true, "")
 	}
 	return
 }

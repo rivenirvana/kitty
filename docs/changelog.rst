@@ -126,11 +126,13 @@ Detailed list of changes
 - Wayland GNOME: Fix incorrect OS Window tracking because GNOME has started
   activating windows on non-current workspaces (:iss:`8716`)
 
-- Fix a regression in 0.40.0 that broke rendering of VS15 variation selectors in some circumstances (:iss:`8731`)
+- Fix a regression in 0.40.0 that broke rendering of VS15 variation selectors in some circumstances (:iss:`8731`, :iss:`8794`)
 
 - Fix a regression in 0.40.0 that broke serialization of tab characters as ANSI text (:iss:`8741`)
 
 - Fix a regression in 0.40.0 that broke erasing of characters in a line in the presence of wide characters (:iss:`8758`)
+
+- Fix a regression in 0.40.0 that broke hyperlinking of wide characters (:iss:`8796`)
 
 - Fix a regression that broke using :kbd:`esc` to exit visual select window mode (:iss:`8767`)
 

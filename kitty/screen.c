@@ -866,7 +866,7 @@ halve_multicell_width(Screen *self, index_type x_, index_type y_) {
     int y_max_limit = MIN(self->lines, y_ + cp[x_].scale);
     for (int y = y_min_limit + 1; y < y_max_limit; y++) {
         Line *line = range_line_(self, y); cp = line->cpu_cells; gp = line->gpu_cells;
-        for (index_type x = 0; x < half_x_limit; x++) cp[x].width = new_width;
+        for (index_type x = x_; x < half_x_limit; x++) cp[x].width = new_width;
         for (index_type x = half_x_limit; x < x_limit; x++) {
             cp[x] = (CPUCell){0}; clear_sprite_position(gp[x]);
         }
@@ -1174,7 +1174,7 @@ draw_text_loop(Screen *self, const uint32_t *chars, size_t num_chars, text_loop_
                 } else nuke_multicell_char_at(self, self->cursor->x + 1, self->cursor->y, true);
             }
             zero_cells(s, fc, s->gp + self->cursor->x);
-            *fc = (CPUCell){.ch_or_idx=ch, .is_multicell=true, .width=2, .scale=1, .natural_width=true};
+            *fc = (CPUCell){.ch_or_idx=ch, .is_multicell=true, .width=2, .scale=1, .natural_width=true, .hyperlink_id=s->cc.hyperlink_id};
             *second = *fc; second->x = 1;
             s->gp[self->cursor->x + 1] = s->gp[self->cursor->x];
             s->prev.y = self->cursor->y; s->prev.x = self->cursor->x; s->prev.cc = fc;

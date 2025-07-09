@@ -710,12 +710,24 @@ class TestScreen(BaseTest):
         self.ae(s.text_for_selection(), ('a\u00adb',))
 
     def test_variation_selectors(self):
+        s = self.create_screen(cols=8)
+        def widths(text, *widths):
+            s.reset()
+            s.draw(text)
+            def w(x):
+                c = s.cpu_cells(0, x)
+                return (c['mcd'] or {'width': 1})['width']
+            actual = tuple(w(x) for x in range(len(widths)))
+            self.ae(widths, actual)
+        widths('\u4e00\u4e00\u26ab\ufe0e', 2, 2, 2, 2, 1)
+
         s = self.create_screen()
         def tt(text_to_draw):
             s.reset()
             s.draw(text_to_draw)
             self.ae(str(s.line(0)), text_to_draw)
         tt('abc\U0001f44d\ufe0ed')
+
         def t(*a):
             s.reset()
             for i in range(0, len(a), 2):
@@ -947,6 +959,13 @@ class TestScreen(BaseTest):
         def set_link(url=None, id=None):
             parse_bytes(s, '\x1b]8;id={};{}\x1b\\'.format(id or '', url or '').encode('utf-8'))
 
+        set_link('wide-chars', 'XX')
+        self.ae(s.line(0).hyperlink_ids(), tuple(0 for x in range(s.columns)))
+        s.draw('状')
+        self.ae(s.line(0).hyperlink_ids(), (1, 1) + tuple(0 for x in range(s.columns - 2)))
+        set_link()
+
+        s = self.create_screen()
         set_link('url-a', 'a')
         self.ae(s.line(0).hyperlink_ids(), tuple(0 for x in range(s.columns)))
         s.draw('a')

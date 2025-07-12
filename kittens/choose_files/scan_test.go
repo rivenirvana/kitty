@@ -154,8 +154,12 @@ func TestChooseFilesIgnore(t *testing.T) {
 		s.dir_reader = root.ReadDir
 		s.file_reader = root.ReadFile
 		s.global_gitignore = ignorefiles.NewGitignore()
+		s.global_ignore = ignorefiles.NewGitignore()
 		s.respect_ignores = respect_ignores
 		if err := s.global_gitignore.LoadLines("*.png", "s/3"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.global_ignore.LoadLines("x/3"); err != nil {
 			t.Fatal(err)
 		}
 		s.Start()
@@ -170,7 +174,7 @@ func TestChooseFilesIgnore(t *testing.T) {
 			t.Fatalf("Incorrect ignoring:\n%s", diff)
 		}
 	}
-	r(true, `x y b c.png x/s x/1 x/2 x/3 y/s y/3 y/4 y/5 x/s/m y/s/6`)
+	r(true, `x y b c.png x/s x/1 x/2 y/s y/3 y/4 y/5 x/s/m y/s/6`)
 	r(false, `x y a b c.png x/s x/1 x/2 x/3 y/s y/3 y/4 y/5 x/s/m x/s/n y/s/3 y/s/4 y/s/5 y/s/6`)
 }
 
@@ -276,7 +280,7 @@ func TestSortedResults(t *testing.T) {
 		}
 	}
 	tc := func(num_before, expected_new_before int, ci CollectionIndex, expected ...[]int) {
-		ac, new_num_before := r.SplitIntoColumns(func(int) int { return 2 }, 2, num_before, ci)
+		ac, new_num_before, _ := r.SplitIntoColumns(func(int) int { return 2 }, 2, num_before, ci)
 		actual := make([][]int, len(ac))
 		for i, x := range ac {
 			actual[i] = utils.Map(func(r *ResultItem) int { return int(r.score) }, x)

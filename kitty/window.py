@@ -155,7 +155,7 @@ class CwdRequest:
             return window.get_cwd_of_root_child() or ''
         return window.get_cwd_of_child(oldest=self.request_type is CwdRequestType.oldest) or ''
 
-    def modify_argv_for_launch_with_cwd(self, argv: list[str], env: dict[str, str] | None=None) -> str:
+    def modify_argv_for_launch_with_cwd(self, argv: list[str], env: dict[str, str] | None=None, hold_after_ssh: bool = False) -> str:
         window = self.window
         if not window:
             return ''
@@ -166,11 +166,13 @@ class CwdRequest:
                 run_shell = argv[0] == resolved_shell(get_options())[0]
                 server_args = [] if run_shell else list(argv)
                 from kittens.ssh.utils import set_cwd_in_cmdline, set_env_in_cmdline, set_server_args_in_cmdline
+                if ssh_kitten_cmdline and ssh_kitten_cmdline[0] == 'kitten':
+                    ssh_kitten_cmdline[0] = kitten_exe()
                 argv[:] = ssh_kitten_cmdline
-                if argv and argv[0] == 'kitten':
-                    argv[0] = kitten_exe()
                 set_cwd_in_cmdline(reported_cwd, argv)
                 set_server_args_in_cmdline(server_args, argv, allocate_tty=not run_shell)
+                if hold_after_ssh:
+                    argv[:0] = [kitten_exe(), "run-shell"]
                 if env is not None:
                     # Assume env is coming from a local process so drop env
                     # vars that can cause issues when set on the remote host
@@ -1780,6 +1782,8 @@ class Window:
         from kittens.ssh.utils import is_kitten_cmdline
         for p in self.child.foreground_processes:
             q = list(p['cmdline'] or ())
+            if len(q) > 3 and os.path.basename(q[0]) == 'kitten' and q[1] == 'run-shell':
+                q = q[2:]  # --hold-after-ssh causes kitten run-shell wrapper to be added
             if is_kitten_cmdline(q):
                 return q
         return []

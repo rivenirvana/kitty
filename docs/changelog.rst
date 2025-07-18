@@ -106,7 +106,16 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.42.2 [future]
+0.43.0 [2025-07-16]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- A new :opt:`cursor_trail_color` setting to independently control the color of
+  cursor trails (:pull:`8830`)
+
+- Wayland: Fix incorrect window size calculation when transitioning from
+  fullscreen to non-fullscreen with client side decorations (:iss:`8826`)
+
+0.42.2 [2025-07-16]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - A new :ref:`protocol extension <mouse_leave_window>` to notify terminal programs that have turned on SGR Pixel mouse reporting when the mouse leaves the window (:disc:`8808`)

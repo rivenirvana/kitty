@@ -118,6 +118,10 @@ Detailed list of changes
 - macOS: Fix hiding quick access terminal window not restoring focus to
   previously active application (:disc:`8840`)
 
+- Allow using backspace to move the cursor onto the previous line in cooked mode. This is indicated by the `bw` propert in  kitty's terminfo (:iss:`8841`)
+
+- Watchers: A new event for global watchers corresponding to the tab bar being changed (:disc:`8842`)
+
 0.42.2 [2025-07-16]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

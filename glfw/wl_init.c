@@ -454,6 +454,40 @@ static const struct wl_seat_listener seatListener = {
     seatHandleName,
 };
 
+static void
+ignored_color_manager_event(void *data UNUSED, struct wp_color_manager_v1 *wp_color_manager_v1 UNUSED, uint32_t x UNUSED) {}
+
+static void
+on_color_manger_features_done(void *data UNUSED, struct wp_color_manager_v1 *wp_color_manager_v1 UNUSED) {
+    _glfw.wl.color_manager.capabilities_reported = true;
+}
+
+static void
+on_supported_color_primaries(void *data UNUSED, struct wp_color_manager_v1 *wp_color_manager_v1 UNUSED, uint32_t x) {
+    switch(x) {
+        case WP_COLOR_MANAGER_V1_PRIMARIES_SRGB:
+            _glfw.wl.color_manager.supported_primaries.srgb = true; break;
+    }
+}
+
+static void
+on_supported_color_transfer_function(void *data UNUSED, struct wp_color_manager_v1 *wp_color_manager_v1 UNUSED, uint32_t x) {
+    switch(x) {
+        case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22:
+            _glfw.wl.color_manager.supported_transfer_functions.gamma22 = true; break;
+        case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR:
+            _glfw.wl.color_manager.supported_transfer_functions.ext_linear = true; break;
+    }
+}
+
+static const struct wp_color_manager_v1_listener color_manager_listener = {
+    .supported_intent = ignored_color_manager_event,
+    .supported_feature = ignored_color_manager_event,
+    .supported_primaries_named = on_supported_color_primaries,
+    .supported_tf_named = on_supported_color_transfer_function,
+    .done = on_color_manger_features_done,
+};
+
 static void wmBaseHandlePing(void* data UNUSED,
                              struct xdg_wm_base* wmBase,
                              uint32_t serial)
@@ -610,6 +644,9 @@ static void registryHandleGlobal(void* data UNUSED,
         _glfw.wl.xdg_system_bell_v1 = wl_registry_bind(registry, name, &xdg_system_bell_v1_interface, 1);
     } else if (is(xdg_toplevel_tag_manager_v1)) {
         _glfw.wl.xdg_toplevel_tag_manager_v1 = wl_registry_bind(registry, name, &xdg_toplevel_tag_manager_v1_interface, 1);
+    } else if (is(wp_color_manager_v1)) {
+        _glfw.wl.wp_color_manager_v1 = wl_registry_bind(registry, name, &wp_color_manager_v1_interface, 1);
+        wp_color_manager_v1_add_listener(_glfw.wl.wp_color_manager_v1, &color_manager_listener, NULL);
     }
 #undef is
 }
@@ -722,8 +759,16 @@ get_compositor_missing_capabilities(void) {
     C(single_pixel_buffer, wp_single_pixel_buffer_manager_v1); C(preferred_scale, has_preferred_buffer_scale);
     C(idle_inhibit, idle_inhibit_manager); C(icon, xdg_toplevel_icon_manager_v1); C(bell, xdg_system_bell_v1);
     C(window-tag, xdg_toplevel_tag_manager_v1); C(keyboard_shortcuts_inhibit, keyboard_shortcuts_inhibit_manager);
-    if (_glfw.wl.xdg_wm_base_version < 6) p += snprintf(p, sizeof(buf) - (p - buf), "%s ", "window-state-suspended");
-    if (_glfw.wl.xdg_wm_base_version < 5) p += snprintf(p, sizeof(buf) - (p - buf), "%s ", "window-capabilities");
+    C(color-manager, wp_color_manager_v1);
+#define P(x) p += snprintf(p, sizeof(buf) - (p - buf), "%s ", x);
+    if (_glfw.wl.xdg_wm_base_version < 6) P("window-state-suspended");
+    if (_glfw.wl.xdg_wm_base_version < 5) P("window-capabilities");
+    if (_glfw.wl.wp_color_manager_v1 != NULL) {
+        if (!_glfw.wl.color_manager.supported_transfer_functions.gamma22) P("gamma22");
+        if (!_glfw.wl.color_manager.supported_transfer_functions.ext_linear) P("ext_linear");
+        if (!_glfw.wl.color_manager.supported_primaries.srgb) P("srgb");
+    }
+#undef P
 #undef C
     while (p > buf && (p - 1)[0] == ' ') { p--; *p = 0; }
     return buf;
@@ -788,6 +833,9 @@ int _glfwPlatformInit(bool *supports_window_occlusion)
 
     // Sync so we got all initial output events
     wl_display_roundtrip(_glfw.wl.display);
+
+    // Sync so we get all color manager capabilities
+    while(_glfw.wl.wp_color_manager_v1 != NULL && !_glfw.wl.color_manager.capabilities_reported) wl_display_roundtrip(_glfw.wl.display);
 
     for (i = 0; i < _glfw.monitorCount; ++i)
     {
@@ -902,6 +950,8 @@ void _glfwPlatformTerminate(void)
         xdg_system_bell_v1_destroy(_glfw.wl.xdg_system_bell_v1);
     if (_glfw.wl.xdg_toplevel_tag_manager_v1)
         xdg_toplevel_tag_manager_v1_destroy(_glfw.wl.xdg_toplevel_tag_manager_v1);
+    if (_glfw.wl.wp_color_manager_v1)
+        wp_color_manager_v1_destroy(_glfw.wl.wp_color_manager_v1);
     if (_glfw.wl.wp_single_pixel_buffer_manager_v1)
         wp_single_pixel_buffer_manager_v1_destroy(_glfw.wl.wp_single_pixel_buffer_manager_v1);
     if (_glfw.wl.wp_cursor_shape_manager_v1)

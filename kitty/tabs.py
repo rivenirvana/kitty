@@ -237,7 +237,7 @@ class Tab:  # {{{
         self._current_layout_name = layout_name
         self.mark_tab_bar_dirty()
 
-    def startup(self, session_tab: 'SessionTab') -> None:
+    def startup(self, session_tab: SessionTab) -> None:
         target_tab = self
         boss = get_boss()
         for window in session_tab.windows:
@@ -264,6 +264,9 @@ class Tab:  # {{{
 
         with suppress(IndexError):
             self.windows.set_active_window_group_for(self.windows.all_windows[session_tab.active_window_idx])
+        if session_tab.layout_state:
+            if self.current_layout.unserialize(session_tab.layout_state, self.windows):
+                self.relayout()
 
     def serialize_state(self) -> dict[str, Any]:
         return {
@@ -416,7 +419,9 @@ class Tab:  # {{{
 
         Switches to the named layout if another layout is current, otherwise
         switches to the last used layout. Useful to "zoom" a window temporarily
-        by switching to the stack layout. For example::
+        by switching to the stack layout. See also :opt:`scrollback_fill_enlarged_window`
+        if you would like content from the scrollback buffer to scroll down into the
+        zoomed window. For example::
 
             map f1 toggle_layout stack
         ''')

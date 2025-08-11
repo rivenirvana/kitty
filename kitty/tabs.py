@@ -55,7 +55,7 @@ from .tab_bar import TabBar, TabBarData
 from .types import ac
 from .typing_compat import EdgeLiteral, SessionTab, SessionType, TypedDict
 from .utils import cmdline_for_hold, log_error, platform_window_id, resolved_shell, shlex_split, which
-from .window import CwdRequest, Watchers, Window, WindowDict, global_watchers
+from .window import CwdRequest, Watchers, Window, WindowCreationSpec, WindowDict, global_watchers
 from .window_list import WindowList
 
 
@@ -128,6 +128,7 @@ class Tab:  # {{{
     total_progress: int = 0
     has_indeterminate_progress: bool = False
     last_focused_window_with_progress_id: int = 0
+    allow_relayouts: bool = True
 
     def __init__(
         self,
@@ -238,6 +239,14 @@ class Tab:  # {{{
         self.mark_tab_bar_dirty()
 
     def startup(self, session_tab: SessionTab) -> None:
+        self.allow_relayouts = False
+        try:
+            self._startup(session_tab)
+        finally:
+            self.allow_relayouts = True
+        self.relayout()
+
+    def _startup(self, session_tab: SessionTab) -> None:
         target_tab = self
         boss = get_boss()
         for window in session_tab.windows:
@@ -265,8 +274,7 @@ class Tab:  # {{{
         with suppress(IndexError):
             self.windows.set_active_window_group_for(self.windows.all_windows[session_tab.active_window_idx])
         if session_tab.layout_state:
-            if self.current_layout.unserialize(session_tab.layout_state, self.windows):
-                self.relayout()
+            self.current_layout.unserialize(session_tab.layout_state, self.windows)
 
     def serialize_state(self) -> dict[str, Any]:
         return {
@@ -331,9 +339,10 @@ class Tab:  # {{{
         self.mark_tab_bar_dirty()
 
     def relayout(self) -> None:
-        if self.windows:
-            self.current_layout(self.windows)
-        self.relayout_borders()
+        if self.allow_relayouts:
+            if self.windows:
+                self.current_layout(self.windows)
+            self.relayout_borders()
 
     def relayout_borders(self) -> None:
         tm = self.tab_manager_ref()
@@ -575,6 +584,15 @@ class Tab:  # {{{
         next_to: Window | None = None,
         hold_after_ssh: bool = False
     ) -> Window:
+        cs = WindowCreationSpec(
+            use_shell=use_shell, cmd=cmd, has_stdin=bool(stdin), override_title=override_title, cwd_from=cwd_from,
+            cwd=cwd, overlay_for=overlay_for, env=None if env is None else tuple(env.items()), location=location,
+            copy_colors_from=None if copy_colors_from is None else copy_colors_from.id,
+            allow_remote_control=allow_remote_control,
+            remote_control_passwords=None if remote_control_passwords is None else remote_control_passwords.copy(),
+            marker=marker, overlay_behind=overlay_behind, is_clone_launch=is_clone_launch, hold=hold, bias=bias,
+            hold_after_ssh=hold_after_ssh,
+        )
         child = self.launch_child(
             use_shell=use_shell, cmd=cmd, stdin=stdin, cwd_from=cwd_from, cwd=cwd, env=env,
             is_clone_launch=is_clone_launch, add_listen_on_env_var=False if allow_remote_control and remote_control_passwords else True,
@@ -585,6 +603,7 @@ class Tab:  # {{{
             copy_colors_from=copy_colors_from, watchers=watchers,
             allow_remote_control=allow_remote_control, remote_control_passwords=remote_control_passwords
         )
+        window.creation_spec = cs
         # Must add child before laying out so that resize_pty succeeds
         get_boss().add_child(window)
         self._add_window(window, location=location, overlay_for=overlay_for, overlay_behind=overlay_behind, bias=bias, next_to=next_to)

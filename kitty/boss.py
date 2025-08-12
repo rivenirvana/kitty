@@ -501,6 +501,12 @@ class Boss:
                         'background_opacity': bo,
                     }
 
+    def serialize_state_as_session(self) -> Iterator[str]:
+        s = {current_focused_os_window_id(): 2, last_focused_os_window_id(): 1}
+        for i, os_window_id in enumerate(sorted(self.os_window_map, key=lambda wid: s.get(wid, 0))):
+            tm = self.os_window_map[os_window_id]
+            yield from tm.serialize_state_as_session(is_first=i==0)
+
     @property
     def all_tab_managers(self) -> Iterator[TabManager]:
         yield from self.os_window_map.values()

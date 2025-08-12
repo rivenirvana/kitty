@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # License: GPL v3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
+import json
 import os
 import re
 import stat
@@ -287,6 +288,31 @@ class Tab:  # {{{
             'enabled_layouts': self.enabled_layouts,
             'name': self.name,
         }
+
+    def serialize_state_as_session(self) -> list[str]:
+        import shlex
+        launch_cmds = []
+        active_idx = self.windows.active_group_idx
+        for i, g in enumerate(self.windows.iter_all_layoutable_groups()):
+            gw: list[str] = []
+            for window in g:
+                lc = window.as_launch_command(is_overlay=bool(gw))
+                if lc:
+                    gw.append(shlex.join(lc))
+            if gw:
+                launch_cmds.extend(gw)
+                if i == active_idx:
+                    launch_cmds.append('focus')
+        if launch_cmds:
+            return [
+                '',
+                f'new_tab {self.name}'.rstrip(),
+                f'layout {self._current_layout_name}',
+                f'enabled_layouts {",".join(self.enabled_layouts)}',
+                f'set_layout_state {json.dumps(self.current_layout.serialize(self.windows))}',
+                ''
+            ] + launch_cmds
+        return []
 
     def active_window_changed(self) -> None:
         w = self.active_window
@@ -1152,7 +1178,7 @@ class TabManager:  # {{{
                         'is_active': tab is active_tab,
                         'title': tab.name or tab.title,
                         'layout': str(tab.current_layout.name),
-                        'layout_state': tab.current_layout.layout_state(),
+                        'layout_state': tab.current_layout.serialize(tab.windows),
                         'layout_opts': tab.current_layout.layout_opts.serialized(),
                         'enabled_layouts': tab.enabled_layouts,
                         'windows': windows,
@@ -1167,6 +1193,24 @@ class TabManager:  # {{{
             'tabs': [tab.serialize_state() for tab in self],
             'active_tab_idx': self.active_tab_idx,
         }
+
+    def serialize_state_as_session(self, is_first: bool = False) -> list[str]:
+        ans = []
+        hmap = {tab_id: i for i, tab_id in enumerate(self.active_tab_history)}
+        if (at := self.active_tab) is not None:
+            hmap[at.id] = len(self.active_tab_history) + 1
+        def skey(tab: Tab) -> int:
+            return hmap.get(tab.id, -1)
+        for tab in sorted(self, key=skey):
+            ans.extend(tab.serialize_state_as_session())
+        if ans:
+            prefix = [] if is_first else ['', '', 'new_os_window']
+            if self.wm_class:
+                prefix.append(f'os_window_class {self.wm_class}')
+            if self.wm_name:
+                prefix.append(f'os_window_name {self.wm_name}')
+            ans = prefix + ans
+        return ans
 
     @property
     def active_tab(self) -> Tab | None:

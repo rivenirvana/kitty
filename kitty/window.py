@@ -34,6 +34,7 @@ from .constants import (
     clear_handled_signals,
     config_dir,
     kitten_exe,
+    serialize_user_var_name,
     wakeup_io_loop,
 )
 from .fast_data_types import (
@@ -1943,7 +1944,7 @@ class Window:
         ' Return the last position at which a mouse event was received by this window '
         return get_mouse_data_for_window(self.os_window_id, self.tab_id, self.id)
 
-    def as_launch_command(self) -> list[str]:
+    def as_launch_command(self, is_overlay: bool = False) -> list[str]:
         ' Return a launch command that can be used to serialize this window. Empty list indicates not serializable. '
         if self.actions_on_close or self.actions_on_focus_change or self.actions_on_removal:
             # such windows are typically UI kittens. The actions are not
@@ -1976,8 +1977,8 @@ class Window:
                 ans.append('--hold')
             if self.creation_spec.hold_after_ssh:
                 ans.append('--hold-after-ssh')
-        for k, v in self.user_vars.items():
-            ans.append(f'--var={k}={v}')
+        ans.extend(f'--var={k}={v}' for k, v in self.user_vars.items())
+        ans.append(f'--var={serialize_user_var_name}={self.id}')
         ans.extend(self.padding.as_launch_args())
         ans.extend(self.margin.as_launch_args('margin'))
         if self.override_title:
@@ -1996,7 +1997,7 @@ class Window:
                 lpos = (f'{ypos}-{xpos}' if ypos else xpos) if xpos else ypos
             ans.append(f'--logo-position={lpos}')
 
-        if self.overlay_parent is not None:
+        if is_overlay:
             t = 'overlay-main' if self.overlay_type is OverlayType.main else 'overlay'
             ans.append(f'--type={t}')
 

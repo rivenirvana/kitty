@@ -1955,6 +1955,12 @@ class Window:
             cwd = path_from_osc7_url(self.screen.last_reported_cwd) or cwd
         if cwd:
             ans.append(f'--cwd={cwd}')
+        if self.allow_remote_control:
+            ans.append('--allow-remote-control')
+        if self.remote_control_passwords:
+            import shlex
+            for pw, rcp_items in self.remote_control_passwords.items():
+                ans.append(f'--remote-control-password={shlex.join((pw,) + tuple(rcp_items))}')
         if self.creation_spec:
             if self.creation_spec.env:
                 env = dict(self.creation_spec.env)
@@ -1966,10 +1972,16 @@ class Window:
                 ans.append(f'--color={cs}')
             for wr in self.creation_spec.watchers:
                 ans.append(f'--watcher={wr}')
+            if self.creation_spec.hold:
+                ans.append('--hold')
+            if self.creation_spec.hold_after_ssh:
+                ans.append('--hold-after-ssh')
         for k, v in self.user_vars.items():
             ans.append(f'--var={k}={v}')
         ans.extend(self.padding.as_launch_args())
         ans.extend(self.margin.as_launch_args('margin'))
+        if self.override_title:
+            ans.append(f'--title={self.override_title}')
         wl = get_window_logo_settings_if_not_default(self.os_window_id, self.tab_id, self.id)
         if wl is not None:
             logo_path, logo_alpha, logo_pos = wl

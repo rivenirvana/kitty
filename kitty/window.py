@@ -652,6 +652,7 @@ class Window:
     initial_ignore_focus_changes: bool = False
     initial_ignore_focus_changes_context_manager_in_operation: bool = False
     creation_spec: WindowCreationSpec | None = None
+    created_in_session_name: str = ''
 
     @classmethod
     @contextmanager
@@ -2002,7 +2003,8 @@ class Window:
             ans.append(f'--type={t}')
 
         if self.creation_spec and self.creation_spec.cmd:
-            ans.extend(self.creation_spec.cmd)
+            if self.creation_spec.cmd != resolved_shell(get_options()):
+                ans.extend(self.creation_spec.cmd)
         return ans
 
 

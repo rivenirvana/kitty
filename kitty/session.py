@@ -365,17 +365,21 @@ seen_session_paths: dict[str, str] = {}
 def create_session(boss: BossType, path: str) -> str:
     session_name = ''
     for i, s in enumerate(create_sessions(get_options(), default_session=path)):
+
         if i == 0:
             session_name = s.session_name
             if s.num_of_windows_in_definition == 0:  # leading new_os_window
                 continue
             tm = boss.active_tab_manager
             if tm is None:
-                boss.add_os_window(s)
+                os_window_id = boss.add_os_window(s)
             else:
+                os_window_id = tm.os_window_id
                 tm.add_tabs_from_session(s)
         else:
-            boss.add_os_window(s)
+            os_window_id = boss.add_os_window(s)
+        if s.focus_os_window:
+            boss.focus_os_window(os_window_id)
     seen_session_paths[session_name] = path
     return session_name
 
@@ -475,6 +479,11 @@ def goto_session(boss: BossType, cmdline: Sequence[str]) -> None:
         append_to_session_history(session_name)
 
 
+save_as_session_message = '''\
+Save the current state of kitty as a session file for easy re-use. If the path at which to save the session
+file is not specified, kitty will prompt you for one.'''
+
+
 def save_as_session_options() -> str:
     return '''
 --save-only
@@ -486,7 +495,7 @@ Only save the specified session file, dont open it in an editor to review after 
 type=bool-set
 When saving windows that were started with the default shell but are currently running some
 other process inside that shell, save that process so that when the session is used
-both the shell :bold:`and` the process running inside it are re-started. This is most useful
+both the shell **and** the process running inside it are re-started. This is most useful
 when you have opened programs like editors or similar inside windows that started out running
 the shell and you want to preserve that. WARNING: Be careful when using this option, if you are
 running some dangerous command like :file:`rm` or :file:`mv` or similar in a shell, it will be re-run when

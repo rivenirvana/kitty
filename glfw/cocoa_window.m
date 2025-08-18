@@ -2229,9 +2229,26 @@ void _glfwPlatformMaximizeWindow(_GLFWwindow* window)
 
 void _glfwPlatformShowWindow(_GLFWwindow* window)
 {
-    if (window->ns.layer_shell.is_active && window->ns.layer_shell.config.type == GLFW_LAYER_SHELL_BACKGROUND) {
-        [window->ns.object orderBack:nil];
-    } else [window->ns.object orderFront:nil];
+    const bool is_background = window->ns.layer_shell.is_active && window->ns.layer_shell.config.type == GLFW_LAYER_SHELL_BACKGROUND;
+    NSWindow *nw = window->ns.object;
+    if (is_background) {
+        [nw orderBack:nil];
+    } else {
+        // Cocoa has a bug where when showing a hidden window after
+        // fullscreening an application, the window does not get added
+        // to the current space even though it has NSWindowCollectionBehaviorCanJoinAllSpaces
+        // probably because it wasnt added to the temp space used for
+        // fullscreen. So to work around that, we change the collection
+        // behavior temporarily to NSWindowCollectionBehaviorMoveToActiveSpace
+        // and then change it back asynchronously.
+        // See https://github.com/kovidgoyal/kitty/issues/8740
+        NSWindowCollectionBehavior old = nw.collectionBehavior;
+        nw.collectionBehavior = (old & !NSWindowCollectionBehaviorCanJoinAllSpaces) | NSWindowCollectionBehaviorMoveToActiveSpace;
+        [nw orderFront:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+			nw.collectionBehavior = old;
+		});
+    }
 }
 
 void _glfwPlatformHideWindow(_GLFWwindow* window)
@@ -3168,6 +3185,62 @@ GLFWAPI GLFWcocoarenderframefun glfwCocoaSetWindowResizeCallback(GLFWwindow *w, 
     return current;
 }
 
+@implementation NSView (FindByIdentifier)
+
+- (NSArray<NSView *> *)viewsWithIdentifier:(NSUserInterfaceItemIdentifier)identifier {
+    NSMutableArray<NSView *> *result = [NSMutableArray array];
+    if ([self.identifier isEqual:identifier]) {
+        [result addObject:self];
+    }
+    for (NSView *sub in self.subviews) {
+        [result addObjectsFromArray:[sub viewsWithIdentifier:identifier]];
+    }
+    return result;
+}
+
+@end
+
+static CGFloat
+title_bar_and_tool_bar_height(NSWindow *window) {
+    NSRect frame = window.frame;
+    NSRect content = [window contentRectForFrameRect:frame];
+    return NSHeight(frame) - NSHeight(content);
+}
+
+static
+void clear_title_bar_background_views(NSWindow *window) {
+#define tag @"kitty-for-transparent-titlebar"
+    NSView *contentView = window.contentView, *titlebarContainer = contentView ? contentView.superview : nil;
+    if (titlebarContainer) {
+        for (NSView *subview in [titlebarContainer viewsWithIdentifier:tag]) [subview removeFromSuperview];
+    }
+}
+
+static void
+set_title_bar_background(NSWindow *window, NSColor *backgroundColor) {
+    NSView *contentView = window.contentView, *titlebarContainer = contentView ? contentView.superview : nil;
+    if (!titlebarContainer) return;
+    for (NSView *subview in [titlebarContainer viewsWithIdentifier:tag]) [subview removeFromSuperview];
+    if (!backgroundColor) return;
+
+    const CGFloat height = title_bar_and_tool_bar_height(window);
+    NSView *bgView = [[NSView alloc] initWithFrame:NSMakeRect(
+        0, titlebarContainer.bounds.size.height - height, titlebarContainer.bounds.size.width, height)];
+    bgView.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    bgView.wantsLayer = YES;
+    bgView.layer.backgroundColor = backgroundColor.CGColor;
+    bgView.identifier = tag;
+
+    NSView *containerView = [[NSView alloc] initWithFrame:window.contentView.bounds];
+    containerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    containerView.identifier = tag;
+    [containerView addSubview:bgView];
+    [bgView release];
+    [window.contentView addSubview:containerView];
+    [containerView release];
+#undef tag
+}
+
 GLFWAPI void glfwCocoaSetWindowChrome(GLFWwindow *w, unsigned int color, bool use_system_color, unsigned int system_color, int background_blur, unsigned int hide_window_decorations, bool show_text_in_titlebar, int color_space, float background_opacity, bool resizable) { @autoreleasepool {
     _GLFWwindow* window = (_GLFWwindow*)w;
     if (window->ns.layer_shell.is_active) return;
@@ -3180,7 +3253,7 @@ GLFWAPI void glfwCocoaSetWindowChrome(GLFWwindow *w, unsigned int color, bool us
     const bool in_fullscreen = ((current_style_mask & NSWindowStyleMaskFullScreen) != 0) || window->ns.in_traditional_fullscreen;
     NSAppearance *light_appearance = is_transparent ? [NSAppearance appearanceNamed:NSAppearanceNameVibrantLight] : [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     NSAppearance *dark_appearance = is_transparent ? [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark] : [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-    if (use_system_color || background_opacity < 1.0) {
+    if (use_system_color) {
         if (is_transparent) {
             // prevent blurring of shadows at window corners with desktop background by setting a low alpha background
             background = background_blur > 0 ? [NSColor colorWithWhite: 0 alpha: 0.001f] : [NSColor clearColor];
@@ -3197,7 +3270,8 @@ GLFWAPI void glfwCocoaSetWindowChrome(GLFWwindow *w, unsigned int color, bool us
         double green = ((color >> 8) & 0xFF) / 255.0;
         double blue = (color & 0xFF) / 255.0;
         double luma = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-        background = [NSColor colorWithSRGBRed:red green:green blue:blue alpha:1.f];
+        CGFloat alpha = background_opacity < 1.0 ? background_opacity : 1.0;
+        background = [NSColor colorWithSRGBRed:red green:green blue:blue alpha:alpha];
         appearance = luma < 0.5 ? dark_appearance : light_appearance;
         titlebar_transparent = true;
     }
@@ -3259,6 +3333,9 @@ GLFWAPI void glfwCocoaSetWindowChrome(GLFWwindow *w, unsigned int color, bool us
     [[window->ns.object standardWindowButton: NSWindowCloseButton] setHidden:hide_titlebar_buttons];
     [[window->ns.object standardWindowButton: NSWindowMiniaturizeButton] setHidden:hide_titlebar_buttons];
     [[window->ns.object standardWindowButton: NSWindowZoomButton] setHidden:hide_titlebar_buttons];
+    if (background_opacity < 1.0 && !window->ns.titlebar_hidden && window->decorated) {
+        set_title_bar_background(window->ns.object, [background colorUsingColorSpace:(cs ? cs : [NSColorSpace deviceRGBColorSpace])]);
+    } else clear_title_bar_background_views(window->ns.object);
     // Apple throws a hissy fit if one attempts to clear the value of NSWindowStyleMaskFullScreen outside of a full screen transition
     // event. See https://github.com/kovidgoyal/kitty/issues/7106
     NSWindowStyleMask fsmask = current_style_mask & NSWindowStyleMaskFullScreen;

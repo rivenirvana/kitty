@@ -137,8 +137,10 @@ class Tab:  # {{{
         session_tab: Optional['SessionTab'] = None,
         special_window: SpecialWindowInstance | None = None,
         cwd_from: CwdRequest | None = None,
-        no_initial_window: bool = False
+        no_initial_window: bool = False,
+        session_name: str = '',
     ):
+        self.created_in_session_name = session_name
         self.tab_manager_ref = weakref.ref(tab_manager)
         self.os_window_id: int = tab_manager.os_window_id
         self.id: int = add_tab(self.os_window_id)
@@ -256,11 +258,11 @@ class Tab:  # {{{
                 self.new_special_window(spec)
             else:
                 from .launch import launch
+                spec.opts.add_to_session = self.created_in_session_name
                 launched_window = launch(
                     boss, spec.opts, spec.args, target_tab=target_tab, force_target_tab=True,
                     startup_command_via_shell_integration=window.run_command_at_shell_startup)
                 if launched_window is not None:
-                    launched_window.created_in_session_name = self.created_in_session_name
                     launched_window.serialized_id = window.serialized_id
             if window.resize_spec is not None:
                 self.resize_window(*window.resize_spec)
@@ -535,7 +537,7 @@ class Tab:  # {{{
         pass_fds: tuple[int, ...] = (),
         remote_control_fd: int = -1,
         hold_after_ssh: bool = False,
-        startup_command_via_shell_integration: Sequence[str] = (),
+        startup_command_via_shell_integration: Sequence[str] | str = (),
     ) -> Child:
         check_for_suitability = True
         if cmd is None:
@@ -627,7 +629,7 @@ class Tab:  # {{{
         remote_control_fd: int = -1,
         next_to: Window | None = None,
         hold_after_ssh: bool = False,
-        startup_command_via_shell_integration: Sequence[str] = (),
+        startup_command_via_shell_integration: Sequence[str] | str = (),
     ) -> Window:
         cs = WindowCreationSpec(
             use_shell=use_shell, cmd=cmd, has_stdin=bool(stdin), override_title=override_title, cwd_from=cwd_from,
@@ -954,6 +956,8 @@ class Tab:  # {{{
             if query == 'parent_focused':
                 return active_tab_manager is not None and self.tab_manager_ref() is active_tab_manager and self.os_window_id == last_focused_os_window_id()
             return False
+        if field == 'session':
+            return re.search(query, self.created_in_session_name) is not None
         return False
 
     def __iter__(self) -> Iterator[Window]:
@@ -1011,8 +1015,7 @@ class TabManager:  # {{{
     def add_tabs_from_session(self, session: SessionType) -> None:
         before = len(self.tabs)
         for t in session.tabs:
-            tab = Tab(self, session_tab=t)
-            tab.created_in_session_name = session.session_name
+            tab = Tab(self, session_tab=t, session_name=self.created_in_session_name)
             self._add_tab(tab)
         num_added = len(self.tabs) - before
         self._set_active_tab(max(0, min(num_added + session.active_tab_idx, len(self.tabs) - 1)))

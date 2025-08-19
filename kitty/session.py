@@ -41,7 +41,10 @@ ResizeSpec = tuple[str, int]
 
 class WindowSpec:
 
-    def __init__(self, launch_spec: Union['LaunchSpec', 'SpecialWindowInstance'], serialized_id: int = 0, run_command_at_shell_startup: Sequence[str] = ()):
+    def __init__(
+        self, launch_spec: Union['LaunchSpec', 'SpecialWindowInstance'], serialized_id: int = 0,
+        run_command_at_shell_startup: Sequence[str] | str = ()
+):
         self.launch_spec = launch_spec
         self.resize_spec: ResizeSpec | None = None
         self.focus_matching_window_spec: str = ''
@@ -365,7 +368,6 @@ seen_session_paths: dict[str, str] = {}
 def create_session(boss: BossType, path: str) -> str:
     session_name = ''
     for i, s in enumerate(create_sessions(get_options(), default_session=path)):
-
         if i == 0:
             session_name = s.session_name
             if s.num_of_windows_in_definition == 0:  # leading new_os_window

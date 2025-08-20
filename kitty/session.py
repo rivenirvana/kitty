@@ -206,6 +206,8 @@ def parse_session(
     session_name = session_arg_to_name(session_arg)
     if session_path:
         session_base_dir = os.path.dirname(os.path.abspath(session_path))
+        if session_name:
+            seen_session_paths[session_name] = session_path
     else:
         session_base_dir = os.getcwd()
 
@@ -382,7 +384,6 @@ def create_session(boss: BossType, path: str) -> str:
             os_window_id = boss.add_os_window(s)
         if s.focus_os_window:
             boss.focus_os_window(os_window_id)
-    seen_session_paths[session_name] = path
     return session_name
 
 
@@ -483,7 +484,9 @@ def goto_session(boss: BossType, cmdline: Sequence[str]) -> None:
 
 save_as_session_message = '''\
 Save the current state of kitty as a session file for easy re-use. If the path at which to save the session
-file is not specified, kitty will prompt you for one.'''
+file is not specified, kitty will prompt you for one. If the path is :code:`.` it will save the session
+to the path of the currently active session, if there is one, otherwise prompt you for a path.
+'''
 
 
 def save_as_session_options() -> str:
@@ -510,6 +513,13 @@ type=bool-set
 When saving the working directory for windows, do so as paths relative to the directory in which
 the session file will be saved. This allows the session file to work even when its containing
 directory is moved elsewhere.
+
+
+--match
+If specified, only save all windows (and their parent tabs/OS Windows) that match the specified
+search expression. See :ref:`search_syntax` for details on the search language. In particular if
+you want to only save windows that are present in the currently active session,
+use :code:`--match=session:.`.
 '''
 
 
@@ -539,6 +549,9 @@ def default_save_as_session_opts() -> SaveAsSessionOptions:
 def save_as_session(boss: BossType, cmdline: Sequence[str]) -> None:
     opts, args = parse_save_as_options_spec_args(list(cmdline))
     path = args[0] if args else ''
+    if path == '.':
+        sn = boss.active_session
+        path = seen_session_paths.get(sn) or ''
     if path:
         save_as_session_part2(boss, opts, path)
     else:

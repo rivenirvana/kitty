@@ -129,7 +129,6 @@ class Tab:  # {{{
     has_indeterminate_progress: bool = False
     last_focused_window_with_progress_id: int = 0
     allow_relayouts: bool = True
-    created_in_session_name: str = ''
 
     def __init__(
         self,
@@ -322,11 +321,15 @@ class Tab:  # {{{
                 if i == active_idx:
                     launch_cmds.append('focus')
         if launch_cmds:
+            enabled_layouts = list(self.enabled_layouts)
+            layout = self._current_layout_name
+            if layout not in enabled_layouts:
+                enabled_layouts.append(layout)
             return [
                 '',
                 f'new_tab {self.name}'.rstrip(),
-                f'layout {self._current_layout_name}',
-                f'enabled_layouts {",".join(self.enabled_layouts)}',
+                f'layout {layout}',
+                f'enabled_layouts {",".join(enabled_layouts)}',
                 f'set_layout_state {json.dumps(self.current_layout.serialize(self.windows))}',
                 f'cd {most_common_cwd}',
                 ''
@@ -1016,10 +1019,10 @@ class TabManager:  # {{{
         if startup_session is not None:
             self.add_tabs_from_session(startup_session)
 
-    def add_tabs_from_session(self, session: SessionType) -> None:
+    def add_tabs_from_session(self, session: SessionType, session_name: str = '') -> None:
         before = len(self.tabs)
         for t in session.tabs:
-            tab = Tab(self, session_tab=t, session_name=self.created_in_session_name)
+            tab = Tab(self, session_tab=t, session_name=session_name or self.created_in_session_name)
             self._add_tab(tab)
         num_added = len(self.tabs) - before
         self._set_active_tab(max(0, min(num_added + session.active_tab_idx, len(self.tabs) - 1)))

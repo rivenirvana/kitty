@@ -208,6 +208,7 @@ def parse_session(
         session_base_dir = os.path.dirname(os.path.abspath(session_path))
         if session_name:
             seen_session_paths[session_name] = session_path
+            append_to_session_history(session_name)
     else:
         session_base_dir = os.getcwd()
 
@@ -379,7 +380,7 @@ def create_session(boss: BossType, path: str) -> str:
                 os_window_id = boss.add_os_window(s)
             else:
                 os_window_id = tm.os_window_id
-                tm.add_tabs_from_session(s)
+                tm.add_tabs_from_session(s, session_name)
         else:
             os_window_id = boss.add_os_window(s)
         if s.focus_os_window:
@@ -458,8 +459,16 @@ def goto_session(boss: BossType, cmdline: Sequence[str]) -> None:
         except Exception:
             idx = 0
         if idx < 0:
-            nidx = max(0, len(goto_session_history) - 1 - idx)
-            switch_to_session(boss, goto_session_history[nidx])
+            if boss.active_session:
+                nidx = max(0, len(goto_session_history) - 1 + idx)
+                if nidx < len(goto_session_history):
+                    switch_to_session(boss, goto_session_history[nidx])
+                    return
+            else:
+                if goto_session_history:
+                    switch_to_session(boss, goto_session_history[-1])
+                    return
+            boss.ring_bell_if_allowed()
             return
     else:
         for x in cmdline:
@@ -479,7 +488,8 @@ def goto_session(boss: BossType, cmdline: Sequence[str]) -> None:
         tb = traceback.format_exc()
         boss.show_error(_('Failed to create session'), _('Could not create session from {0} with error:\n{1}').format(path, tb))
     else:
-        append_to_session_history(session_name)
+        # Ensure newly created session is focused needed when it doesn't create its own OS Windows.
+        switch_to_session(boss, session_name)
 
 
 save_as_session_message = '''\

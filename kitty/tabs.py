@@ -977,6 +977,11 @@ class Tab:  # {{{
     def num_window_groups(self) -> int:
         return self.windows.num_groups
 
+    @property
+    def active_session_name(self) -> str:
+        w = self.active_window
+        return '' if w is None else w.created_in_session_name
+
     def __contains__(self, window: Window) -> bool:
         return window in self.windows
 
@@ -1148,17 +1153,16 @@ class TabManager:  # {{{
             self.set_active_tab_idx((self.active_tab_idx + len(self.tabs) + delta) % len(self.tabs))
 
     def toggle_tab(self, match_expression: str) -> None:
-        tabs = set(get_boss().match_tabs(match_expression)) & set(self)
+        tabs = set(get_boss().match_tabs(match_expression, all_tabs=self))
         if not tabs:
             get_boss().show_error(_('No matching tab'), _('No tab found matching the expression: {}').format(match_expression))
             return
         if self.active_tab and self.active_tab in tabs:
             self.goto_tab(-1)
         else:
-            for x in self:
-                if x in tabs:
-                    self.set_active_tab(x)
-                    break
+            for x in tabs:
+                self.set_active_tab(x)
+                break
 
     def tab_at_location(self, loc: str) -> Tab | None:
         if loc == 'prev':
@@ -1297,11 +1301,19 @@ class TabManager:  # {{{
         cwd_from: CwdRequest | None = None,
         as_neighbor: bool = False,
         empty_tab: bool = False,
-        location: str = 'last'
+        location: str = 'last',
     ) -> Tab:
         idx = len(self.tabs)
         orig_active_tab_idx = self.active_tab_idx
-        self._add_tab(Tab(self, no_initial_window=True) if empty_tab else Tab(self, special_window=special_window, cwd_from=cwd_from))
+        session_name = ''
+        if cwd_from is not None and (sw := cwd_from.window):
+            session_name = sw.created_in_session_name
+        t = Tab(self, no_initial_window=True, session_name=session_name) if empty_tab else Tab(
+                self, special_window=special_window, cwd_from=cwd_from, session_name=session_name)
+        if not empty_tab and session_name:
+            for w in t:
+                w.created_in_session_name = session_name
+        self._add_tab(t)
         if as_neighbor:
             location = 'after'
         if location == 'neighbor':
@@ -1392,7 +1404,7 @@ class TabManager:  # {{{
                 has_activity_since_last_focus, t.active_fg, t.active_bg,
                 t.inactive_fg, t.inactive_bg, t.num_of_windows_with_progress,
                 t.total_progress, t.last_focused_window_with_progress_id,
-                t.created_in_session_name,
+                t.created_in_session_name, t.active_session_name,
             ))
         return ans
 

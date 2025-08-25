@@ -440,7 +440,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, C
 
         GLuint default_fg, highlight_fg, highlight_bg, cursor_fg, cursor_bg, url_color, url_style, inverted;
 
-        GLuint columns, lines, sprites_xnum, sprites_ynum, cursor_fg_sprite_idx, cell_width, cell_height;
+        GLuint columns, lines, sprites_xnum, sprites_ynum, cursor_shape, cell_width, cell_height;
         GLuint cursor_x1, cursor_x2, cursor_y1, cursor_y2;
         GLfloat cursor_opacity, inactive_text_alpha, dim_opacity;
 
@@ -474,23 +474,13 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, C
     }
     rd->use_cell_for_selection_bg = IS_SPECIAL_COLOR(highlight_bg) ? 1. : 0.;
     // Cursor position
-    enum { BLOCK_IDX = 0, BEAM_IDX = 2, UNDERLINE_IDX = 3, UNFOCUSED_IDX = 4 };
     Line *line_for_cursor = NULL;
-    if (cursor->opacity > 0) {
+    rd->cursor_opacity = MAX(0, MIN(cursor->opacity, 1));
+    if (rd->cursor_opacity != 0 && cursor->is_visible) {
         rd->cursor_x1 = cursor->x, rd->cursor_y1 = cursor->y;
         rd->cursor_x2 = cursor->x, rd->cursor_y2 = cursor->y;
-        rd->cursor_opacity = cursor->opacity;
         CursorShape cs = (cursor->is_focused || OPT(cursor_shape_unfocused) == NO_CURSOR_SHAPE) ? cursor->shape : OPT(cursor_shape_unfocused);
-        switch(cs) {
-            case CURSOR_BEAM:
-                rd->cursor_fg_sprite_idx = BEAM_IDX; break;
-            case CURSOR_UNDERLINE:
-                rd->cursor_fg_sprite_idx = UNDERLINE_IDX; break;
-            case CURSOR_BLOCK: case NUM_OF_CURSOR_SHAPES: case NO_CURSOR_SHAPE:
-                rd->cursor_fg_sprite_idx = BLOCK_IDX; break;
-            case CURSOR_HOLLOW:
-                rd->cursor_fg_sprite_idx = UNFOCUSED_IDX; break;
-        };
+        rd->cursor_shape = cs;
         color_type cell_fg = rd->default_fg, cell_bg = rd->bg_colors0;
         index_type cell_color_x = cursor->x;
         bool reversed = false;
@@ -536,6 +526,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, C
         // store last rendered cursor color for trail rendering
         screen->last_rendered.cursor_bg = rd->cursor_bg;
     } else {
+        rd->cursor_shape = 0;
         rd->cursor_x1 = screen->columns + 1; rd->cursor_x2 = screen->columns;
         rd->cursor_y1 = screen->lines + 1; rd->cursor_y2 = screen->lines;
     }
@@ -568,8 +559,8 @@ cell_prepare_to_render(ssize_t vao_idx, Screen *screen, FONTS_DATA_HANDLE fonts_
     ensure_sprite_map(fonts_data);
     const Cursor *cursor = screen->paused_rendering.expires_at ? &screen->paused_rendering.cursor : screen->cursor;
 
-    bool cursor_pos_changed = cursor->x != screen->last_rendered.cursor_x
-                           || cursor->y != screen->last_rendered.cursor_y;
+    bool cursor_pos_changed = cursor->x != screen->last_rendered.cursor.x \
+                           || cursor->y != screen->last_rendered.cursor.y;
     bool disable_ligatures = screen->disable_ligatures == DISABLE_LIGATURES_CURSOR;
     bool screen_resized = screen->last_rendered.columns != screen->columns || screen->last_rendered.lines != screen->lines;
 
@@ -584,11 +575,6 @@ cell_prepare_to_render(ssize_t vao_idx, Screen *screen, FONTS_DATA_HANDLE fonts_
     if (screen->paused_rendering.expires_at) {
         if (!screen->paused_rendering.cell_data_updated) update_cell_data;
     } else if (screen->reload_all_gpu_data || screen->scroll_changed || screen->is_dirty || screen_resized || (disable_ligatures && cursor_pos_changed)) update_cell_data;
-
-    if (cursor_pos_changed) {
-        screen->last_rendered.cursor_x = cursor->x;
-        screen->last_rendered.cursor_y = cursor->y;
-    }
 
 #define update_selection_data { \
     sz = (size_t)screen->lines * screen->columns; \
@@ -616,6 +602,7 @@ cell_prepare_to_render(ssize_t vao_idx, Screen *screen, FONTS_DATA_HANDLE fonts_
 #undef update_cell_data
     screen->last_rendered.columns = screen->columns;
     screen->last_rendered.lines = screen->lines;
+    screen->last_rendered.cursor = screen->cursor_render_info;
 
     return changed;
 }

@@ -217,7 +217,7 @@ typedef struct {
     CursorShape shape;
 
     struct {
-        bool bold, italic, reverse, strikethrough, dim;
+        bool bold, italic, reverse, strikethrough, dim, blink;
         uint8_t decoration;
         color_type fg, bg, decoration_fg;
     } sgr;
@@ -227,7 +227,7 @@ typedef struct {
     bool is_focused, render_even_when_unfocused, is_visible;
     CursorShape shape;
     unsigned x, y, multicursor_count;
-    float opacity;
+    float cursor_opacity, text_blink_opacity;
 } CursorRenderInfo;
 
 typedef enum DynamicColorType {

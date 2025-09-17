@@ -1,8 +1,8 @@
-name: "Code scanning - action"
+name: "CodeQL"
 
 on:
     push:
-        branches: [master, ]
+        branches: [master]
     pull_request:
         # The branches below must be a subset of the branches above
         branches: [master]
@@ -19,7 +19,25 @@ jobs:
             contents: read # to fetch code (actions/checkout)
             security-events: write # to upload SARIF results (github/codeql-action/analyze)
 
-        runs-on: ubuntu-latest
+        strategy:
+          fail-fast: false
+          matrix:
+            include:
+               - language: python
+                 os: ubuntu-latest
+               - language: c
+                 os: ubuntu-latest
+               - language: c
+                 os: macos-latest
+               - language: go
+                 os: ubuntu-latest
+               - language: actions
+                 os: ubuntu-latest
+
+        runs-on: ${{ matrix.os }}
+        env:
+            KITTY_BUNDLE: 1
+            KITTY_CODEQL: 1
 
         steps:
 
@@ -31,6 +49,7 @@ jobs:
               fetch-depth: 2
 
         - name: Install Go
+          if: matrix.language == 'c' || matrix.language == 'go'
           uses: actions/setup-go@v6
           with:
               go-version-file: go.mod
@@ -39,9 +58,10 @@ jobs:
         - name: Initialize CodeQL
           uses: github/codeql-action/init@v3
           with:
-              languages: python, c, go
+              languages: ${{ matrix.language }}
 
         - name: Build kitty
+          if: matrix.language == 'c' || matrix.language == 'go'
           run: python3 .github/workflows/ci.py build
 
         - name: Perform CodeQL Analysis

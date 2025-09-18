@@ -4,6 +4,7 @@
 
 import glob
 import io
+import json
 import os
 import shlex
 import shutil
@@ -11,7 +12,7 @@ import subprocess
 import sys
 import tarfile
 import time
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 BUNDLE_URL = 'https://download.calibre-ebook.com/ci/kitty/{}-64.tar.xz'
 FONTS_URL = 'https://download.calibre-ebook.com/ci/fonts.tar.xz'
@@ -156,11 +157,13 @@ def setup_bundle_env() -> None:
     os.environ['PATH'] = '{}:{}'.format(os.path.join(SW, 'bin'), os.environ['PATH'])
 
 
-def install_bundle() -> None:
+def install_bundle(dest: str = '', which: str = '') -> None:
+    dest = dest or SW
     cwd = os.getcwd()
-    os.makedirs(SW)
-    os.chdir(SW)
-    with urlopen(BUNDLE_URL.format('macos' if is_macos else 'linux')) as f:
+    os.makedirs(dest, exist_ok=True)
+    os.chdir(dest)
+    which = which or ('macos' if is_macos else 'linux')
+    with urlopen(BUNDLE_URL.format(which)) as f:
         data = f.read()
     with tarfile.open(fileobj=io.BytesIO(data), mode='r:xz') as tf:
         try:
@@ -172,11 +175,67 @@ def install_bundle() -> None:
         for dirpath, dirnames, filenames in os.walk('.'):
             for f in filenames:
                 if f.endswith('.pc') or (f.endswith('.py') and f.startswith('_sysconfig')):
-                    replace_in_file(os.path.join(dirpath, f), '/sw/sw', SW)
+                    replace_in_file(os.path.join(dirpath, f), '/sw/sw', dest)
                     replaced += 1
         if replaced < 2:
             raise SystemExit('Failed to replace path to SW in bundle')
     os.chdir(cwd)
+
+
+def install_grype() -> str:
+    dest = os.path.join(SW, 'bin')
+    rq = Request('https://api.github.com/repos/anchore/grype/releases/latest', headers={
+        'Accept': 'application/vnd.github.v3+json',
+    })
+    with urlopen(rq) as f:
+        m = json.loads(f.read())
+    for asset in m['assets']:
+        if asset['name'].endswith('_linux_amd64.tar.gz'):
+            url = asset['browser_download_url']
+            break
+    else:
+        raise ValueError('Could not find linux binary for grype')
+    os.makedirs(dest, exist_ok=True)
+    with urlopen(url) as f:
+        data = f.read()
+    with tarfile.open(fileobj=io.BytesIO(data), mode='r') as tf:
+        tf.extract('grype', path=dest, filter='fully_trusted')
+    return os.path.join(dest, 'grype')
+
+
+IGNORED_DEPENDENCY_CVES = [
+    # Python stdlib
+    'CVE-2025-8194', # DoS in tarfile
+    'CVE-2025-6069', # DoS in HTMLParser
+]
+
+
+def check_dependencies() -> None:
+    grype = install_grype()
+    with open((gc := os.path.expanduser('~/.grype.yml')), 'w') as f:
+        print('ignore:', file=f)
+        for x in IGNORED_DEPENDENCY_CVES:
+            print('  - vulnerability:', x, file=f)
+    dest = os.path.join(SW, 'linux')
+    os.makedirs(dest, exist_ok=True)
+    install_bundle(dest, os.path.basename(dest))
+    dest = os.path.join(SW, 'macos')
+    os.makedirs(dest, exist_ok=True)
+    install_bundle(dest, os.path.basename(dest))
+    cmdline = [grype, '--by-cve', '--config', gc, '--fail-on', 'medium', '--only-fixed', '--add-cpes-if-none']
+    if (cp := subprocess.run(cmdline + ['dir:' + SW])).returncode != 0:
+        raise SystemExit(cp.returncode)
+    # Now test against the SBOM
+    import runpy
+    orig = sys.argv, sys.stdout
+    sys.argv = ['bypy', 'sbom', 'myproject', '1.0.0']
+    buf = io.StringIO()
+    sys.stdout = buf
+    runpy.run_path('bypy-src')
+    sys.argv, sys.stdout = orig
+    print(buf.getvalue())
+    if (cp := subprocess.run(cmdline, input=buf.getvalue().encode())).returncode != 0:
+        raise SystemExit(cp.returncode)
 
 
 def main() -> None:
@@ -200,6 +259,8 @@ def main() -> None:
             q = '\n'.join(filter(lambda x: not x.rstrip().endswith('_generated.go'), q.strip().splitlines())).strip()
             if q:
                 raise SystemExit(q)
+    elif action == 'check-dependencies':
+        check_dependencies()
     else:
         raise SystemExit(f'Unknown action: {action}')
 

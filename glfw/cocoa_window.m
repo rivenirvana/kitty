@@ -521,6 +521,7 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 @interface GLFWWindowDelegate : NSObject
 {
     _GLFWwindow* window;
+    NSArray<NSDictionary *> *_lastScreenStates;
 }
 
 - (instancetype)initWithGlfwWindow:(_GLFWwindow *)initWindow;
@@ -533,10 +534,24 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 - (instancetype)initWithGlfwWindow:(_GLFWwindow *)initWindow
 {
     self = [super init];
-    if (self != nil)
+    if (self != nil) {
         window = initWindow;
-
+        _lastScreenStates = [self captureScreenStates];
+    }
     return self;
+}
+
+- (NSArray<NSDictionary *> *)captureScreenStates {
+    NSMutableArray *states = [NSMutableArray array];
+    for (NSScreen *screen in [NSScreen screens]) {
+        // Use the screen's deviceDescription, which contains a stable ID.
+        [states addObject:screen.deviceDescription];
+    }
+    return [states copy];
+}
+
+- (void)cleanup {
+    [_lastScreenStates release]; _lastScreenStates = nil;
 }
 
 - (BOOL)windowShouldClose:(id)sender
@@ -549,6 +564,16 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
 - (void)windowDidResize:(NSNotification *)notification
 {
     (void)notification;
+    NSArray<NSDictionary *> *currentScreenStates = [self captureScreenStates];
+    const bool is_screen_change = ![_lastScreenStates isEqualToArray:currentScreenStates];
+    debug_rendering("windowDidResize() called, is_screen_change: %d\n", is_screen_change);
+    if (is_screen_change) {
+        // This resize likely happened because a screen was added, removed, or changed resolution.
+        [_lastScreenStates release];
+        _lastScreenStates = [currentScreenStates retain];
+    }
+    [currentScreenStates release];
+
     if (window->context.client != GLFW_NO_API)
         [window->context.nsgl.object update];
 
@@ -580,7 +605,10 @@ static const NSRange kEmptyRange = { NSNotFound, 0 };
         window->ns.height = (int)contentRect.size.height;
         _glfwInputWindowSize(window, (int)contentRect.size.width, (int)contentRect.size.height);
     }
-    if (window->ns.resizeCallback) window->ns.resizeCallback((GLFWwindow*)window);
+    // Because of a bug in macOS Tahoe we cannot redraw the window in response
+    // to a resize event that was caused by a screen change as the OpenGL
+    // context is not ready yet. See: https://github.com/kovidgoyal/kitty/issues/8983
+    if (window->ns.resizeCallback && !is_screen_change) window->ns.resizeCallback((GLFWwindow*)window);
 }
 
 - (void)windowDidMove:(NSNotification *)notification
@@ -1622,12 +1650,6 @@ void _glfwPlatformUpdateIMEState(_GLFWwindow *w, const GLFWIMEUpdateEvent *ev) {
 
 @implementation GLFWWindow
 
-static void
-handle_screen_size_change(_GLFWwindow *window, NSNotification *notification UNUSED) {
-    if (!window || !window->ns.layer_shell.is_active) return;
-    _glfwPlatformSetLayerShellConfig(window, NULL);
-}
-
 - (instancetype)initWithGlfwWindow:(NSRect)contentRect
                          styleMask:(NSWindowStyleMask)style
                            backing:(NSBackingStoreType)backingStoreType
@@ -1638,14 +1660,14 @@ handle_screen_size_change(_GLFWwindow *window, NSNotification *notification UNUS
         glfw_window = initWindow;
         self.tabbingMode = NSWindowTabbingModeDisallowed;
         NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-        [center addObserverForName:NSApplicationDidChangeScreenParametersNotification
-                        object:nil
-                        queue:[NSOperationQueue mainQueue]
-                        usingBlock:^(NSNotification * _Nonnull notification) {
-                        handle_screen_size_change(glfw_window, notification);
-                    }];
+        [center addObserver:self selector:@selector(screenParametersDidChange:) name:NSApplicationDidChangeScreenParametersNotification object:nil];
     }
     return self;
+}
+
+- (void)screenParametersDidChange:(NSNotification *)notification {
+    if (!glfw_window || !glfw_window->ns.layer_shell.is_active) return;
+    _glfwPlatformSetLayerShellConfig(glfw_window, NULL);
 }
 
 - (void) removeGLFWWindow
@@ -1919,6 +1941,7 @@ void _glfwPlatformDestroyWindow(_GLFWwindow* window)
         window->context.destroy(window);
 
     [window->ns.object setDelegate:nil];
+    [window->ns.delegate cleanup];
     [window->ns.delegate release];
     window->ns.delegate = nil;
 

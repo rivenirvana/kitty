@@ -5,6 +5,7 @@ import os
 import sys
 from contextlib import suppress
 from functools import partial
+from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
 from kitty.cli import parse_args
@@ -96,8 +97,8 @@ def layer_shell_config(opts: PanelCLIOptions) -> LayerShellConfig:
 
 
 @run_once
-def cli_option_to_lsc_configs_map() -> dict[str, tuple[str, ...]]:
-    return {
+def cli_option_to_lsc_configs_map() -> MappingProxyType[str, tuple[str, ...]]:
+    return MappingProxyType({
         'lines': ('y_size_in_cells', 'y_size_in_pixels'),
         'columns': ('x_size_in_cells', 'x_size_in_pixels'),
         'margin_top': ('requested_top_margin',),
@@ -111,14 +112,15 @@ def cli_option_to_lsc_configs_map() -> dict[str, tuple[str, ...]]:
         'exclusive_zone': ('requested_exclusive_zone',),
         'override_exclusive_zone': ('override_exclusive_zone',),
         'hide_on_focus_loss': ('hide_on_focus_loss',)
-    }
+    })
 
 
 def incrementally_update_layer_shell_config(existing: dict[str, Any], cli_options: Iterable[str]) -> LayerShellConfig:
     seen_options: dict[str, Any] = {}
+    cli_options = [('' if x.startswith('--') else '--') + x for x in cli_options]
     try:
         try:
-            opts, _ = parse_panel_args(list(cli_options), track_seen_options=seen_options)
+            opts, _ = parse_panel_args(cli_options, track_seen_options=seen_options)
         except SystemExit as e:
             raise ValueError(str(e))
         lsc = layer_shell_config(opts)
@@ -126,7 +128,7 @@ def incrementally_update_layer_shell_config(existing: dict[str, Any], cli_option
         raise ValueError(f'Invalid panel options specified: {e}')
     lsc_cli_map = cli_option_to_lsc_configs_map()
     for option in seen_options:
-        for config in lsc_cli_map[option]:
+        for config in lsc_cli_map.get(option, ()):
             existing[config] = getattr(lsc, config)
     if seen_options.get('edge') == 'background':
         existing['type'] = GLFW_LAYER_SHELL_BACKGROUND

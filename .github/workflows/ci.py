@@ -218,6 +218,7 @@ IGNORED_DEPENDENCY_CVES = [
     # Python stdlib
     'CVE-2025-8194', # DoS in tarfile
     'CVE-2025-6069', # DoS in HTMLParser
+    # glib
     'CVE-2025-4056', # Only affects Windows, on which we dont run
 ]
 
@@ -265,6 +266,12 @@ def main() -> None:
         package_kitty()
     elif action == 'test':
         test_kitty()
+    elif action == 'test':
+        test_kitty()
+    elif action == 'govulncheck':
+        subprocess.check_call(['go', 'install', 'golang.org/x/vuln/cmd/govulncheck@latest'])
+        subprocess.check_call(['govulncheck', '-mode=binary', 'kitty/launcher/kitten'])
+        subprocess.check_call(['govulncheck', './...'])
     elif action == 'gofmt':
         q = subprocess.check_output('gofmt -s -l tools kittens'.split()).decode()
         if q.strip():

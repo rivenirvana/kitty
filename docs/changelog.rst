@@ -134,6 +134,16 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
+0.43.1 [future]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- macOS: Fix a bug where the color of a transparent titlebar was off when
+  running in the release build versus the build from source. Also fix using a
+  transparent titlebar causing the background opacity to be darkened.
+
+- Fix a regression in the previous release that caused the incorrect tab to be
+  active when loading a session (:iss:`9025`)
+
 0.43.0 [2025-09-28]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

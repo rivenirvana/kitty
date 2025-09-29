@@ -139,10 +139,18 @@ Detailed list of changes
 
 - macOS: Fix a bug where the color of a transparent titlebar was off when
   running in the release build versus the build from source. Also fix using a
-  transparent titlebar causing the background opacity to be darkened.
+  transparent titlebar causing the background opacity to be doubled.
 
 - Fix a regression in the previous release that caused the incorrect tab to be
   active when loading a session (:iss:`9025`)
+
+- macOS: Workaround for bug in macOS Tahoe that caused closed OS Windows to
+  remain as invisible rectangles that intercept mouse events (:iss:`8952`)
+
+- goto_session: Add ``--sort-by=alphabetical`` to have the interactive session
+  picker list the sessions in a fixed order rather than by most recent
+  (:disc:`9033`)
+
 
 0.43.0 [2025-09-28]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -214,9 +222,6 @@ Detailed list of changes
 
 - macOS: Pass the :kbd:`Cmd+C` shortcut to the application running in the
   terminal when no text is selected (:pull:`8946`)
-
-- macOS: Workaround for bug in macOS Tahoe that caused closed OS Windows to
-  remain as invisible rectangles that intercept mouse events (:iss:`8952`)
 
 - macOS: Workaround for bug in macOS Tahoe that caused OS Windows that are
   fullscreen on a monitor that is disconnected while macOS is asleep to crash kitty (:iss:`8983`)

@@ -137,6 +137,10 @@ Detailed list of changes
 0.43.1 [future]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+- ssh kitten: Allow specifying a password and/or TOTP authentication secret to
+  automate interactive logins in scenarios where public key authentication is
+  not supported (:pull:`9020`)
+
 - macOS: Fix a bug where the color of a transparent titlebar was off when
   running in the release build versus the build from source. Also fix using a
   transparent titlebar causing the background opacity to be doubled.
@@ -151,7 +155,7 @@ Detailed list of changes
   switching of dark/light mode when setting :opt:`macos_titlebar_color` to a
   arbitrary color (:iss:`9034`)
 
-- goto_session: Add ``--sort-by=alphabetical`` to have the interactive session
+- :ac:`goto_session`: Add ``--sort-by=alphabetical`` to have the interactive session
   picker list the sessions in a fixed order rather than by most recent
   (:disc:`9033`)
 
@@ -160,6 +164,9 @@ Detailed list of changes
 
 - Session files: Fix a regression in the previous release that broke matching on
   windows in the current tab (:iss:`9037`)
+
+- Fix a regression in the previous release that broke clearing screen lines
+  when in margin mode (:iss:`9049`)
 
 
 0.43.0 [2025-09-28]

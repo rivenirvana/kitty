@@ -177,24 +177,40 @@ func (dc *DiskCache) update_last_used(key string) {
 
 }
 
-func (dc *DiskCache) get(key string, items []string) map[string]string {
-	ans := make(map[string]string, len(items))
-	base := dc.folder_for_key(key)
-	if s, err := os.Stat(base); err != nil || !s.IsDir() {
-		return ans
+func (dc *DiskCache) export_to_get_dir(key, path string) (string, error) {
+	dest := filepath.Join(dc.get_dir, key+"-"+filepath.Base(path))
+	if err := os.Link(path, dest); err != nil {
+		os.Remove(dest)
+		if err := os.Link(path, dest); err != nil {
+			return "", err
+		}
 	}
+	return dest, nil
+
+}
+
+func (dc *DiskCache) get(key string, items []string) map[string]string {
+	base := dc.folder_for_key(key)
+	if len(items) == 0 {
+		if entries, err := os.ReadDir(base); err != nil {
+			return make(map[string]string)
+		} else {
+			for _, e := range entries {
+				items = append(items, e.Name())
+			}
+		}
+	} else {
+		if s, err := os.Stat(base); err != nil || !s.IsDir() {
+			return make(map[string]string)
+		}
+	}
+	ans := make(map[string]string, len(items))
 	for _, x := range items {
 		p := filepath.Join(base, x)
 		if s, err := os.Stat(p); err != nil || s.IsDir() {
 			continue
 		}
-		dest := filepath.Join(dc.get_dir, key+"-"+x)
-		if err := os.Link(p, dest); err != nil {
-			os.Remove(dest)
-			if err := os.Link(p, dest); err != nil {
-				dest = ""
-			}
-		}
+		dest, _ := dc.export_to_get_dir(key, p)
 		if dest != "" {
 			ans[x] = dest
 		}
@@ -269,13 +285,13 @@ func (dc *DiskCache) keys() (ans []string, err error) {
 	return utils.Keys(dc.entry_map), nil
 }
 
-func (dc *DiskCache) add(key string, items map[string][]byte) (err error) {
+func (dc *DiskCache) add(key string, items map[string][]byte) (ans map[string]string, err error) {
 	if err = dc.ensure_entries(); err != nil {
 		return
 	}
 	base := dc.folder_for_key(key)
 	if err = os.MkdirAll(base, 0o700); err != nil {
-		return err
+		return
 	}
 	var changed int64
 	defer func() {
@@ -284,22 +300,40 @@ func (dc *DiskCache) add(key string, items map[string][]byte) (err error) {
 			err = e
 		}
 	}()
+	ans = make(map[string]string, len(items))
 	for x, data := range items {
 		p := filepath.Join(base, x)
 		var before int64
+		exists := false
 		if s, err := os.Stat(p); err == nil {
 			before = s.Size()
+			exists = true
 		}
 		if len(data) == 0 {
-			if err = os.Remove(p); err != nil {
-				return
+			if exists {
+				if err = os.Remove(p); err != nil {
+					if !os.IsNotExist(err) {
+						return
+					}
+					err = nil
+				}
+				changed -= before
 			}
-			changed -= before
 		} else {
+			// unlink the file so that writing to it does not change a
+			// previously linked copy created by get()
+			if exists {
+				_ = os.Remove(p)
+			}
 			if err = os.WriteFile(p, data, 0o700); err != nil {
 				return
 			}
 			changed += int64(len(data)) - before
+			if dest, err := dc.export_to_get_dir(key, p); err != nil {
+				return ans, err
+			} else {
+				ans[x] = dest
+			}
 		}
 	}
 	return

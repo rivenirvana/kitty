@@ -25,14 +25,14 @@ func (c NRGBColor) RGBA() (r, g, b, a uint32) {
 	g |= g << 8
 	b = uint32(c.B)
 	b |= b << 8
-	a = 65280 // ( 255 << 8 )
+	a = 65535 // (255 << 8 | 255)
 	return
 }
 
 // NRGB is an in-memory image whose At method returns NRGBColor values.
 type NRGB struct {
-	// Pix holds the image's pixels, in R, G, B, A order. The pixel at
-	// (x, y) starts at Pix[(y-Rect.Min.Y)*Stride + (x-Rect.Min.X)*4].
+	// Pix holds the image's pixels, in R, G, B order. The pixel at
+	// (x, y) starts at Pix[(y-Rect.Min.Y)*Stride + (x-Rect.Min.X)*3].
 	Pix []uint8
 	// Stride is the Pix stride (in bytes) between vertically adjacent pixels.
 	Stride int
@@ -45,17 +45,18 @@ func nrgbModel(c color.Color) color.Color {
 		return c
 	}
 	r, g, b, a := c.RGBA()
-	if a == 0xffff {
+	switch a {
+	case 0xffff:
+		return NRGBColor{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
+	case 0:
+		return NRGBColor{0, 0, 0}
+	default:
+		// Since Color.RGBA returns an alpha-premultiplied color, we should have r <= a && g <= a && b <= a.
+		r = (r * 0xffff) / a
+		g = (g * 0xffff) / a
+		b = (b * 0xffff) / a
 		return NRGBColor{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
 	}
-	if a == 0 {
-		return NRGBColor{0, 0, 0}
-	}
-	// Since Color.RGBA returns an alpha-premultiplied color, we should have r <= a && g <= a && b <= a.
-	r = (r * 0xffff) / a
-	g = (g * 0xffff) / a
-	b = (b * 0xffff) / a
-	return NRGBColor{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
 }
 
 var NRGBModel color.Model = color.ModelFunc(nrgbModel)
@@ -73,14 +74,14 @@ func (p *NRGB) NRGBAt(x, y int) NRGBColor {
 		return NRGBColor{}
 	}
 	i := p.PixOffset(x, y)
-	s := p.Pix[i : i+4 : i+4] // Small cap improves performance, see https://golang.org/issue/27857
+	s := p.Pix[i : i+3 : i+3] // Small cap improves performance, see https://golang.org/issue/27857
 	return NRGBColor{s[0], s[1], s[2]}
 }
 
 // PixOffset returns the index of the first element of Pix that corresponds to
 // the pixel at (x, y).
 func (p *NRGB) PixOffset(x, y int) int {
-	return (y-p.Rect.Min.Y)*p.Stride + (x-p.Rect.Min.X)*4
+	return (y-p.Rect.Min.Y)*p.Stride + (x-p.Rect.Min.X)*3
 }
 
 func (p *NRGB) Set(x, y int, c color.Color) {
@@ -170,14 +171,17 @@ func newScannerRGB(img image.Image, opaque_base NRGBColor) *scanner_rgb {
 	}
 	if img, ok := img.(*image.Paletted); ok {
 		s.palette = make([]NRGBColor, max(256, len(img.Palette)))
-		d := make([]uint8, 3)
+		d := [3]uint8{0, 0, 0}
+		ds := d[:]
 		for i := 0; i < len(img.Palette); i++ {
 			r, g, b, a := img.Palette[i].RGBA()
 			switch a {
 			case 0:
 				s.palette[i] = opaque_base
+			case 0xffff:
+				s.palette[i] = NRGBColor{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
 			default:
-				blend(d, s.opaque_base, uint8((r*0xffff/a)>>8), uint8((g*0xffff/a)>>8), uint8((b*0xffff/a)>>8), uint8(a>>8))
+				blend(ds, s.opaque_base, uint8((r*0xffff/a)>>8), uint8((g*0xffff/a)>>8), uint8((b*0xffff/a)>>8), uint8(a>>8))
 				s.palette[i] = NRGBColor{d[0], d[1], d[2]}
 			}
 		}
@@ -424,4 +428,16 @@ func NewNRGB(r image.Rectangle) *NRGB {
 		Stride: 3 * r.Dx(),
 		Rect:   r,
 	}
+}
+
+func NewNRGBWithContiguousRGBPixels(p []byte, left, top, width, height int) (*NRGB, error) {
+	const bpp = 3
+	if expected := bpp * width * height; expected != len(p) {
+		return nil, fmt.Errorf("the image width and height dont match the size of the specified pixel data: width=%d height=%d sz=%d != %d", width, height, len(p), expected)
+	}
+	return &NRGB{
+		Pix:    p,
+		Stride: bpp * width,
+		Rect:   image.Rectangle{image.Point{left, top}, image.Point{left + width, top + height}},
+	}, nil
 }

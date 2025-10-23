@@ -1,0 +1,94 @@
+diff --git a/docs/color-stack.rst b/docs/color-stack.rst
+index 465763571..6cf45e7f5 100644
+--- a/docs/color-stack.rst
++++ b/docs/color-stack.rst
+@@ -52,8 +52,8 @@ than numbers. The syntax of the escape code is::
+     <OSC> 21 ; key=value ; key=value ; ... <ST>
+ 
+ The spaces in the above definition are for reading clarity and should be ignored.
+-Here, ``<OSC>`` is the two bytes ``0x1b (ESC)`` and ``0x5d (])``. ``ST`` is
+-either ``0x7 (BEL)`` or the two bytes ``0x1b (ESC)`` and ``0x5c (\\)``.
++Here, ``<OSC>`` is the two bytes ``0x1b (ESC)`` and ``0x5d (])``. ``<ST>`` is
++either ``0x07 (BEL)`` or the two bytes ``0x1b (ESC)`` and ``0x5c (\\)``.
+ 
+ ``key`` is a number from 0-255 to query or set the color values from the
+ terminals ANSI color table, or one of the strings in the table below for
+diff --git a/kitty/rc/scroll_window.py b/kitty/rc/scroll_window.py
+index 51399d715..d33f475ca 100644
+--- a/kitty/rc/scroll_window.py
++++ b/kitty/rc/scroll_window.py
+@@ -29,7 +29,7 @@ class ScrollWindow(RemoteCommand):
+         ' For example, :code:`30` will scroll down 30 lines, :code:`2p-`'
+         ' will scroll up 2 pages and :code:`0.5p` will scroll down half page.'
+         ' :code:`3u` will *unscroll* by 3 lines, which means that 3 lines will move from the'
+-        ' scrollback buffer onto the top of the screen. :code:`1r-` will scroll to the previous prompt and 1r to the next prompt.'
++        ' scrollback buffer onto the top of the screen. :code:`1r-` will scroll to the previous prompt and :code:`1r` to the next prompt.'
+         ' See :ac:`scroll_to_prompt` for details on how scrolling to prompt works.'
+     )
+     options_spec = MATCH_WINDOW_OPTION + '''\n
+diff --git a/kitty/screen.c b/kitty/screen.c
+index b593234c4..c0d4b0d94 100644
+--- a/kitty/screen.c
++++ b/kitty/screen.c
+@@ -4334,7 +4334,7 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
+             found_prompt = true;
+             // change direction to downwards to find command output
+             direction = 1;
+-        } else if (line && line->attrs.prompt_kind == OUTPUT_START && !range_line_is_continued(self, y1)) {
++        } else if (line && line->attrs.prompt_kind == OUTPUT_START) {
+             found_output = true; start = y1;
+             found_prompt = true;
+             direction = 1;
+@@ -4348,13 +4348,13 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
+         // find upwards: find prompt after the output, and the first output
+         while (y1 >= upward_limit) {
+             line = checked_range_line(self, y1);
+-            if (line && line->attrs.prompt_kind == PROMPT_START && !range_line_is_continued(self, y1)) {
++            if (line && line->attrs.prompt_kind == PROMPT_START) {
+                 if (direction == 0) {
+                     found_prompt = true;
+                     break;
+                 }
+                 found_next_prompt = true; end = y1;
+-            } else if (line && line->attrs.prompt_kind == OUTPUT_START && !range_line_is_continued(self, y1)) {
++            } else if (line && line->attrs.prompt_kind == OUTPUT_START) {
+                 found_output = true; start = y1;
+                 found_prompt = true;
+                 break;
+@@ -4380,12 +4380,12 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
+                         break;
+                     }
+                     found_prompt = true;
+-                } else if (found_prompt && !found_output) {
++                } else if (!found_output) {
+                     // skip fetching wrapped prompt lines
+                     while (range_line_is_continued(self, y2)) {
+                         y2++;
+                     }
+-                } else if (found_output && !found_next_prompt) {
++                } else if (!found_next_prompt) {
+                     found_next_prompt = true; end = y2;
+                     break;
+                 }
+@@ -4463,7 +4463,7 @@ cmd_output(Screen *self, PyObject *args) {
+             bool reached_upper_limit = false;
+             while (!found && !reached_upper_limit) {
+                 line = checked_range_line(self, y);
+-                if (!line || (line->attrs.prompt_kind == OUTPUT_START && !range_line_is_continued(self, y))) {
++                if (!line || (line->attrs.prompt_kind == OUTPUT_START)) {
+                     int start = line ? y : y + 1; reached_upper_limit = !line;
+                     int y2 = start; unsigned int num_lines = 0;
+                     bool found_content = false;
+diff --git a/kitty/window.py b/kitty/window.py
+index 3c4e92b78..8fee156c6 100644
+--- a/kitty/window.py
++++ b/kitty/window.py
+@@ -2085,7 +2085,7 @@ def show_scrollback(self) -> None:
+         cursor_on_screen = self.screen.scrolled_by < self.screen.lines - self.screen.cursor.y
+         get_boss().display_scrollback(self, data['text'], data['input_line_number'], report_cursor=cursor_on_screen)
+ 
+-    def show_cmd_output(self, which: CommandOutput, title: str = 'Command output', as_ansi: bool = True, add_wrap_markers: bool = True) -> None:
++    def show_cmd_output(self, which: CommandOutput, title: str = 'Command output', as_ansi: bool = False, add_wrap_markers: bool = True) -> None:
+         text = self.cmd_output(which, as_ansi=as_ansi, add_wrap_markers=add_wrap_markers)
+         text = text.replace('\r\n', '\n').replace('\r', '\n')
+         get_boss().display_scrollback(self, text, title=title, report_cursor=False)

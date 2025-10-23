@@ -32,6 +32,8 @@ Source4:        go-vendor-tools.toml
 Source5:        https://raw.githubusercontent.com/kovidgoyal/kitty/46c0951751444e4f4994008f0d2dcb41e49389f4/kitty/data/%{name}.appdata.xml
 Source6:        https://github.com/ryanoasis/nerd-fonts/releases/download/v%{nerdfontver}/NerdFontsSymbolsOnly.tar.xz
 
+Patch0:         fixes.patch
+
 # https://fedoraproject.org/wiki/Changes/EncourageI686LeafRemoval
 ExcludeArch:    %{ix86}
 
@@ -194,6 +196,7 @@ This package contains the documentation for %{name}.
 
 %prep
 {{{git_repo_setup_macro}}}
+%autopatch -p1
 
 go_vendor_archive create --config ./go-vendor-tools.toml ./ -O kitty-vendor.tar.xz
 tar -xf kitty-vendor.tar.xz

@@ -13,6 +13,40 @@ index 465763571..6cf45e7f5 100644
  
  ``key`` is a number from 0-255 to query or set the color values from the
  terminals ANSI color table, or one of the strings in the table below for
+diff --git a/docs/mapping.rst b/docs/mapping.rst
+index 098cdc96a..ce9a02ac1 100644
+--- a/docs/mapping.rst
++++ b/docs/mapping.rst
+@@ -201,7 +201,7 @@ In order to make this work, you need to configure your editor as show below:
+    In :file:`~/.vimrc` add:
+     .. code-block:: vim
+ 
+-        let &t_ti = &t_ti . "\033]1337;SetUserVar=in_editor=MQo\007"
++        let &t_ti = &t_ti . "\033]1337;SetUserVar=in_editor=MQ==\007"
+         let &t_te = &t_te . "\033]1337;SetUserVar=in_editor\007"
+ 
+ .. tab:: neovim
+@@ -214,9 +214,9 @@ In order to make this work, you need to configure your editor as show below:
+             group = vim.api.nvim_create_augroup("KittySetVarVimEnter", { clear = true }),
+             callback = function()
+                 if vim.api.nvim_ui_send then
+-                    vim.api.nvim_ui_send("\x1b]1337;SetUserVar=in_editor=MQo\007")
++                    vim.api.nvim_ui_send("\x1b]1337;SetUserVar=in_editor=MQ==\007")
+                 else
+-                    io.stdout:write("\x1b]1337;SetUserVar=in_editor=MQo\007")
++                    io.stdout:write("\x1b]1337;SetUserVar=in_editor=MQ==\007")
+                 end
+             end,
+         })
+@@ -225,7 +225,7 @@ In order to make this work, you need to configure your editor as show below:
+             group = vim.api.nvim_create_augroup("KittyUnsetVarVimLeave", { clear = true }),
+             callback = function()
+                 if vim.api.nvim_ui_send then
+-                    vim.api.nvim_ui_send("\x1b]1337;SetUserVar=in_editor=MQo\007")
++                    vim.api.nvim_ui_send("\x1b]1337;SetUserVar=in_editor\007")
+                 else
+                     io.stdout:write("\x1b]1337;SetUserVar=in_editor\007")
+                 end
 diff --git a/kitty/rc/scroll_window.py b/kitty/rc/scroll_window.py
 index 51399d715..d33f475ca 100644
 --- a/kitty/rc/scroll_window.py

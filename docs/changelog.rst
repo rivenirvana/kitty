@@ -181,6 +181,21 @@ Detailed list of changes
 
 - Add support for Unicode 17
 
+- Fix a regression in 0.43.0 that caused :opt:`tab_bar_margin_width` to be
+  doubled on the right edge of the tab bar (:iss:`9154`)
+
+- Session files: Add a new ``focus_tab`` command to specify which tab should be
+  active when a session is loaded. Accepts either a plain number (0-based index)
+  or a match expression for flexible tab selection, allowing sessions to preserve
+  the active tab state (:doc:`sessions`)
+
+- :ac:`save_as_session`: Add ``--base-dir`` option to specify a base directory
+  for saving session files with relative paths, useful when the current working
+  directory is not the desired location (:doc:`sessions`)
+
+- Add ``state:focused_os_window`` match query to select all windows in the
+  currently focused OS window (:ref:`search_syntax`)
+
 0.43.1 [2025-10-01]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

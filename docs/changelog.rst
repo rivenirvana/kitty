@@ -176,10 +176,14 @@ Detailed list of changes
 
 - macOS: Add an item to the global menu to Cycle through OS windows
 
+- macOS: Quick access terminal: Fix a crash when changing font size (:iss:`9178`)
+
 - Wayland: Fix ``center-sized`` panels not working on smithay based compositors (:pull:`9117`)
 
 - Wayland: Fix scrolling using some mouse wheels that produce "VALUE120" based
   scroll events too fast on some compositors (:pull:`9128`)
+
+- Automatic color scheme switching: Fix title bar color not being updated (:iss:`9167`)
 
 - Add support for Unicode 17
 
@@ -197,6 +201,10 @@ Detailed list of changes
 
 - Add ``state:focused_os_window`` match query to select all windows in the
   currently focused OS window (:ref:`search_syntax`)
+
+- Session saving now preserves visual tab order and active tab rather than tab
+  activation history as this is generally more important. In the future may
+  have it save tab history as well (:pull:`9163`)
 
 0.43.1 [2025-10-01]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

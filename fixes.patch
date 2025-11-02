@@ -114,10 +114,16 @@ index b593234c4..c0d4b0d94 100644
                      int y2 = start; unsigned int num_lines = 0;
                      bool found_content = false;
 diff --git a/kitty/window.py b/kitty/window.py
-index eaf108717..0dc1fe070 100644
+index eaf108717..f93af61c5 100644
 --- a/kitty/window.py
 +++ b/kitty/window.py
-@@ -2087,7 +2087,7 @@ def show_scrollback(self) -> None:
+@@ -2082,12 +2082,12 @@ def make_exe_absolute(cmd: list[str], pid: int) -> None:
+ 
+     @ac('cp', 'Show scrollback in a pager like less')
+     def show_scrollback(self) -> None:
+-        text = self.as_text(as_ansi=True, add_history=True, add_wrap_markers=True)
++        text = self.as_text(as_ansi=True, add_history=True, add_wrap_markers=False)
+         data = self.pipe_data(text, has_wrap_markers=True)
          cursor_on_screen = self.screen.scrolled_by < self.screen.lines - self.screen.cursor.y
          get_boss().display_scrollback(self, data['text'], data['input_line_number'], report_cursor=cursor_on_screen)
  

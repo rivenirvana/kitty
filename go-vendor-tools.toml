@@ -3,7 +3,7 @@
 [licensing]
 detector = "askalono"
 [[licensing.licenses]]
-path = "vendor/github.com/shirou/gopsutil/v3/LICENSE"
+path = "vendor/github.com/shirou/gopsutil/v4/LICENSE"
 sha256sum = "ad1e64b82c04fb2ee6bfe521bff01266971ffaa70500024d4ac767c6033aafb9"
 expression = "BSD-3-Clause"
 

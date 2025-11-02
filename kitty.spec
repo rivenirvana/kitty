@@ -39,7 +39,9 @@ ExcludeArch:    %{ix86}
 
 BuildRequires:  golang >= 1.23.0
 BuildRequires:  go-rpm-macros
+%if 0%{?fedora}
 BuildRequires:  go-vendor-tools
+%endif
 
 BuildRequires:  git
 BuildRequires:  gnupg2
@@ -172,7 +174,7 @@ Recommends:     %{name}-kitten
 %package        kitten
 Summary:        The kitten executable
 # Generated with go-vendor-tools
-%global kitten_license Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND GPL-3.0-only AND MIT AND MPL-2.0
+%global kitten_license Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND GPL-3.0-only AND MIT
 License:        %{kitten_license}
 
 %description    kitten
@@ -215,8 +217,10 @@ find -type f -name "*.py" -exec sed -e 's|/usr/bin/env python3|%{python3}|g'    
 
 find -type f ! -executable -name "*.py" -exec sed -i '1{\@^#!%{python3}@d}' "{}" \;
 
+%if 0%{?fedora}
 %generate_buildrequires
 %go_vendor_license_buildrequires -c %{S:4}
+%endif
 
 %build
 %set_build_flags
@@ -236,7 +240,9 @@ export KITTEN_EXE_FOR_DOCS=$(pwd)/_build/bin/kitten
 make docs
 
 %install
+%if 0%{?fedora}
 %go_vendor_license_install -c %{S:4}
+%endif
 
 # rpmlint fixes
 find linux-package/%{_lib}/%{name}/shell-integration -type f ! -executable -exec sed -r -i '1{\@^#!/bin/(fish|zsh|sh|bash)@d}' "{}" \;
@@ -276,12 +282,10 @@ rm %{buildroot}%{_datadir}/doc/%{name}/html/.buildinfo \
 
 
 %check
+%if 0%{?fedora}
 %go_vendor_license_check -c %{S:4} %{kitten_license}
-%if %{with test}
-%if 0%{?epel}
-sed '/def test_ssh_leading_data/a \
-\        self.skipTest("Skipping a failing test")' -i kitty_tests/ssh.py
 %endif
+%if %{with test}
 export %{gomodulesmode}
 # Some tests ignores PATH env...
 mkdir -p kitty/launcher
@@ -306,7 +310,11 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 %{_mandir}/man{1,5}/*.{1,5}*
 %{_metainfodir}/*.xml
 
+%if 0%{?fedora}
 %files kitten -f %{go_vendor_license_filelist}
+%else
+%files kitten
+%endif
 %license vendor/modules.txt
 %license LICENSE
 %{_bindir}/kitten

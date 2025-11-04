@@ -114,7 +114,7 @@ index c3db48f5a..645447ab3 100644
                      int y2 = start; unsigned int num_lines = 0;
                      bool found_content = false;
 diff --git a/kitty/window.py b/kitty/window.py
-index 91e1ed1db..fbf34b2ee 100644
+index 297ddd59c..f51b7c697 100644
 --- a/kitty/window.py
 +++ b/kitty/window.py
 @@ -2088,12 +2088,12 @@ def make_exe_absolute(cmd: list[str], pid: int) -> None:

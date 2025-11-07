@@ -302,9 +302,13 @@ func check_resize(frame *ImageFrame, filename string) error {
 	}
 	expected_size := bytes_per_pixel * frame.Width * frame.Height
 	if sz < expected_size {
+		if bytes_per_pixel == 4 && sz == 3*frame.Width*frame.Height {
+			frame.Is_opaque = true
+			return nil
+		}
 		missing := expected_size - sz
 		if missing%(bytes_per_pixel*frame.Width) != 0 {
-			return fmt.Errorf("ImageMagick failed to resize correctly. It generated %d < %d of data (w=%d h=%d bpp=%d)", sz, expected_size, frame.Width, frame.Height, bytes_per_pixel)
+			return fmt.Errorf("ImageMagick failed to resize correctly. It generated %d < %d of data (w=%d h=%d bpp=%d frame-number: %d)", sz, expected_size, frame.Width, frame.Height, bytes_per_pixel, frame.Number)
 		}
 		frame.Height -= missing / (bytes_per_pixel * frame.Width)
 	}
@@ -416,9 +420,7 @@ func parse_identify_record(ans *IdentifyRecord, raw *IdentifyOutput) (err error)
 	}
 	ans.Needs_blend = q == "blend"
 	switch strings.ToLower(raw.Dispose) {
-	case "undefined":
-		ans.Disposal = 0
-	case "none":
+	case "none", "undefined":
 		ans.Disposal = gif.DisposalNone
 	case "background":
 		ans.Disposal = gif.DisposalBackground
@@ -439,11 +441,16 @@ func parse_identify_record(ans *IdentifyRecord, raw *IdentifyOutput) (err error)
 	return
 }
 
-func IdentifyWithMagick(path string) (ans []IdentifyRecord, err error) {
+func IdentifyWithMagick(path, original_file_path string) (ans []IdentifyRecord, err error) {
 	cmd := []string{"identify"}
 	q := `{"fmt":"%m","canvas":"%g","transparency":"%A","gap":"%T","index":"%p","size":"%wx%h",` +
 		`"dpi":"%xx%y","dispose":"%D","orientation":"%[EXIF:Orientation]"},`
-	cmd = append(cmd, "-format", q, "--", path)
+	ext := filepath.Ext(original_file_path)
+	ipath := path
+	if strings.ToLower(ext) == ".apng" {
+		ipath = "APNG:" + path
+	}
+	cmd = append(cmd, "-format", q, "--", ipath)
 	output, err := RunMagick(path, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to identify image at path: %s with error: %w", path, err)
@@ -476,10 +483,15 @@ type RenderOptions struct {
 	TempfilenameTemplate string
 }
 
-func RenderWithMagick(path string, ro *RenderOptions, frames []IdentifyRecord) (ans []*ImageFrame, fmap map[int]string, err error) {
+func RenderWithMagick(path, original_file_path string, ro *RenderOptions, frames []IdentifyRecord) (ans []*ImageFrame, fmap map[int]string, err error) {
 	cmd := []string{"convert"}
 	ans = make([]*ImageFrame, 0, len(frames))
 	fmap = make(map[int]string, len(frames))
+	ext := filepath.Ext(original_file_path)
+	ipath := path
+	if strings.ToLower(ext) == ".apng" {
+		ipath = "APNG:" + path
+	}
 
 	defer func() {
 		if err != nil {
@@ -500,7 +512,7 @@ func RenderWithMagick(path string, ro *RenderOptions, frames []IdentifyRecord) (
 	if ro.Flop {
 		cmd = append(cmd, "-flop")
 	}
-	cpath := path
+	cpath := ipath
 	if ro.OnlyFirstFrame {
 		cpath += "[0]"
 	}
@@ -612,20 +624,26 @@ func RenderWithMagick(path string, ro *RenderOptions, frames []IdentifyRecord) (
 		return
 	}
 	slices.SortFunc(ans, func(a, b *ImageFrame) int { return a.Number - b.Number })
-	anchor_frame := uint(1)
+	prev_disposal := gif.DisposalBackground
+	prev_compose_onto := 0
 	for i, frame := range ans {
-		af, co := gifmeta.SetGIFFrameDisposal(uint(frame.Number), anchor_frame, byte(frames[i].Disposal))
-		anchor_frame, frame.Compose_onto = af, int(co)
+		switch prev_disposal {
+		case gif.DisposalNone:
+			frame.Compose_onto = frame.Number - 1
+		case gif.DisposalPrevious:
+			frame.Compose_onto = prev_compose_onto
+		}
+		prev_disposal, prev_compose_onto = frames[i].Disposal, frame.Compose_onto
 	}
 	return
 }
 
 func OpenImageFromPathWithMagick(path string) (ans *ImageData, err error) {
-	identify_records, err := IdentifyWithMagick(path)
+	identify_records, err := IdentifyWithMagick(path, path)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to identify image at %#v with error: %w", path, err)
 	}
-	frames, filenames, err := RenderWithMagick(path, &RenderOptions{}, identify_records)
+	frames, filenames, err := RenderWithMagick(path, path, &RenderOptions{}, identify_records)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to render image at %#v with error: %w", path, err)
 	}

@@ -144,7 +144,12 @@ Detailed list of changes
 
 - ssh kitten: Fix a bug where automatic login was not working (:iss:`9187`)
 
-- icat kitten: Add support for APNG, netPBM, ICC color profiles and CCIP metadata to the builtin engine
+- icat kitten: Add support for animated PNG and animated WebP, netPBM images, ICC color profiles and CCIP metadata to the builtin engine
+
+- Graphics: Fix overwrite composition mode for animation frames not being honored
+
+- Automatic color scheme switching: Fix title bar and scroll bar colors not being updated (:iss:`9167`)
+
 
 0.44.0 [2025-11-03]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -194,8 +199,6 @@ Detailed list of changes
 
 - Wayland: Fix scrolling using some mouse wheels that produce "VALUE120" based
   scroll events too fast on some compositors (:pull:`9128`)
-
-- Automatic color scheme switching: Fix title bar color not being updated (:iss:`9167`)
 
 - Add support for Unicode 17
 

@@ -32,13 +32,7 @@ func resize_frame(imgd *image_data, img image.Image) (image.Image, image.Rectang
 const shm_template = "kitty-icat-*"
 
 func add_frame(ctx *images.Context, imgd *image_data, img image.Image, left, top int) *image_frame {
-	is_opaque := false
-	if imgd.format_uppercase == "JPEG" {
-		// special cased because EXIF orientation could have already changed this image to an NRGBA making IsOpaque() very slow
-		is_opaque = true
-	} else {
-		is_opaque = imaging.IsOpaque(img)
-	}
+	is_opaque := imaging.IsOpaque(img)
 	b := img.Bounds()
 	if imgd.scaled_frac.x != 0 {
 		img, b = resize_frame(imgd, img)
@@ -91,12 +85,37 @@ func add_frame(ctx *images.Context, imgd *image_data, img image.Image, left, top
 	return &f
 }
 
+func scale_up(width, height, maxWidth, maxHeight int) (newWidth, newHeight int) {
+	if width == 0 || height == 0 {
+		return 0, 0
+	}
+
+	// Calculate the ratio to scale the width and the ratio to scale the height.
+	// We use floating-point division for precision.
+	widthRatio := float64(maxWidth) / float64(width)
+	heightRatio := float64(maxHeight) / float64(height)
+
+	// To preserve the aspect ratio and fit within the limits, we must use the
+	// smaller of the two scaling ratios.
+	var ratio float64
+	if widthRatio < heightRatio {
+		ratio = widthRatio
+	} else {
+		ratio = heightRatio
+	}
+
+	// Calculate the new dimensions and convert them back to uints.
+	newWidth = int(float64(width) * ratio)
+	newHeight = int(float64(height) * ratio)
+
+	return newWidth, newHeight
+}
+
 func scale_image(imgd *image_data) bool {
 	if imgd.needs_scaling {
 		width, height := imgd.canvas_width, imgd.canvas_height
-		if imgd.canvas_width < imgd.available_width && opts.ScaleUp && place != nil {
-			r := float64(imgd.available_width) / float64(imgd.canvas_width)
-			imgd.canvas_width, imgd.canvas_height = imgd.available_width, int(r*float64(imgd.canvas_height))
+		if opts.ScaleUp && (imgd.canvas_width < imgd.available_width || imgd.canvas_height < imgd.available_height) && (imgd.available_height != inf || imgd.available_width != inf) {
+			imgd.canvas_width, imgd.canvas_height = scale_up(imgd.canvas_width, imgd.canvas_height, imgd.available_width, imgd.available_height)
 		}
 		neww, newh := images.FitImage(imgd.canvas_width, imgd.canvas_height, imgd.available_width, imgd.available_height)
 		imgd.needs_scaling = false
@@ -114,7 +133,7 @@ var _ = debugprintln
 
 func add_frames(ctx *images.Context, imgd *image_data, gf *imaging.Image) {
 	for _, f := range gf.Frames {
-		frame := add_frame(ctx, imgd, f.Image, f.X, f.Y)
+		frame := add_frame(ctx, imgd, f.Image, f.TopLeft.X, f.TopLeft.Y)
 		frame.number, frame.compose_onto = int(f.Number), int(f.ComposeOnto)
 		frame.replace = f.Replace
 		frame.delay_ms = int(f.Delay.Milliseconds())
@@ -138,10 +157,11 @@ func render_image_with_go(imgd *image_data, src *opened_input) (err error) {
 	if imgs == nil {
 		return fmt.Errorf("unknown image format")
 	}
+	imgd.format_uppercase = imgs.Metadata.Format.String()
 	// Loading could auto orient and therefore change width/height, so
 	// re-calculate
-	imgd.canvas_width = int(imgs.Metadata.PixelWidth)
-	imgd.canvas_height = int(imgs.Metadata.PixelHeight)
+	b := imgs.Bounds()
+	imgd.canvas_width, imgd.canvas_height = b.Dx(), b.Dy()
 	set_basic_metadata(imgd)
 	scale_image(imgd)
 	add_frames(&ctx, imgd, imgs)

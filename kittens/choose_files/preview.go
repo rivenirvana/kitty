@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/kovidgoyal/go-parallel"
@@ -27,6 +28,7 @@ type Preview interface {
 	Render(h *Handler, x, y, width, height int)
 	IsValidForColorScheme(light bool) bool
 	Unload()
+	IsReady() bool
 }
 
 type PreviewManager struct {
@@ -81,6 +83,7 @@ type MessagePreview struct {
 }
 
 func (p MessagePreview) IsValidForColorScheme(bool) bool { return true }
+func (p MessagePreview) IsReady() bool                   { return true }
 
 func (p MessagePreview) Unload() {}
 func (p MessagePreview) Render(h *Handler, x, y, width, height int) {
@@ -120,6 +123,7 @@ func write_file_metadata(abspath string, metadata fs.FileInfo, entries []fs.DirE
 	add := func(key, val string) { fmt.Fprintf(&buf, "%s: %s\n", key, val) }
 	ftype := metadata.Mode().Type()
 	const file_icon = " "
+	fmt.Fprintln(&buf, filepath.Base(abspath))
 	switch ftype {
 	case 0:
 		add("Size", humanize.Bytes(uint64(metadata.Size())))
@@ -172,7 +176,11 @@ func NewDirectoryPreview(abspath string, metadata fs.FileInfo) Preview {
 }
 
 func NewFileMetadataPreview(abspath string, metadata fs.FileInfo) Preview {
-	title := icons.IconForFileWithMode(filepath.Base(abspath), metadata.Mode().Type(), false) + "  File"
+	ext := filepath.Ext(abspath)
+	if ext == "" {
+		ext = "File"
+	}
+	title := icons.IconForFileWithMode(filepath.Base(abspath), metadata.Mode().Type(), false) + "  " + ext
 	h, t := write_file_metadata(abspath, metadata, nil)
 	return &MessagePreview{title: title, msg: h, trailers: t}
 }
@@ -186,14 +194,16 @@ type highlighed_data struct {
 type TextFilePreview struct {
 	plain_text, highlighted_text string
 	highlighted_chan             chan highlighed_data
+	ready                        atomic.Bool
 	light                        bool
 	path                         string
 }
 
-func (p TextFilePreview) IsValidForColorScheme(light bool) bool { return p.light == light }
+func (p *TextFilePreview) IsValidForColorScheme(light bool) bool { return p.light == light }
 
 func (p *TextFilePreview) Unload() {}
 
+func (p *TextFilePreview) IsReady() bool { return p.ready.Load() || p.highlighted_chan == nil }
 func (p *TextFilePreview) Render(h *Handler, x, y, width, height int) {
 	if p.highlighted_chan != nil {
 		select {
@@ -212,7 +222,7 @@ func (p *TextFilePreview) Render(h *Handler, x, y, width, height int) {
 	s := utils.NewLineScanner(text)
 	buf := strings.Builder{}
 	buf.Grow(1024 * height)
-	for num := 0; s.Scan() && num < height; num++ {
+	for num := 1 + h.render_wrapped_text_in_region(filepath.Base(p.path), x, y, width, height, true); s.Scan() && num < height; num++ {
 		line := s.Text()
 		truncated := wcswidth.TruncateToVisualLength(line, width)
 		buf.WriteString(fmt.Sprintf(loop.MoveCursorToTemplate, y+num, x))
@@ -256,22 +266,20 @@ func (s style_resolver) TextForPath(path string) (string, error) {
 	return "", err
 }
 
-func (pm *PreviewManager) highlight_file_async(path string, output chan highlighed_data) {
+func (pm *PreviewManager) highlight_file_async(path string, output chan highlighed_data, ready *atomic.Bool) {
 	s := style_resolver{light: use_light_colors, syntax_aliases: pm.settings.SyntaxAliases()}
 	s.light_style, s.dark_style = pm.settings.HighlightStyles()
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				err := parallel.Format_stacktrace_on_panic(r, 1)
-				debugprintln(fmt.Sprintf("Failed to highlight: %s with panic: %s", path, err))
+				output <- highlighed_data{err: err, light: s.light}
 			}
 			close(output)
+			ready.Store(true)
 			pm.WakeupMainThread()
 		}()
 		highlighted, err := pm.highlighter.HighlightFile(path, &s)
-		if err != nil {
-			debugprintln(fmt.Sprintf("Failed to highlight: %s with error: %s", path, err))
-		}
 		output <- highlighed_data{text: highlighted, err: err, light: s.light}
 	}()
 }
@@ -305,8 +313,11 @@ func (pm *PreviewManager) preview_for(abspath string, ftype fs.FileMode) (ans Pr
 	const MAX_TEXT_FILE_SIZE = 16 * 1024 * 1024
 	if s.Size() <= MAX_TEXT_FILE_SIZE && (utils.KnownTextualMimes[mt] || strings.HasPrefix(mt, "text/")) {
 		ch := make(chan highlighed_data, 2)
-		pm.highlight_file_async(abspath, ch)
-		return NewTextFilePreview(abspath, s, ch, pm.highlighter.Sanitize)
+		ans := NewTextFilePreview(abspath, s, ch, pm.highlighter.Sanitize)
+		if p, ok := ans.(*TextFilePreview); ok {
+			pm.highlight_file_async(abspath, ch, &p.ready)
+		}
+		return ans
 	}
 	if strings.HasPrefix(mt, "image/") {
 		var r ImagePreviewRenderer
@@ -319,6 +330,17 @@ func (pm *PreviewManager) preview_for(abspath string, ftype fs.FileMode) (ans Pr
 	return NewFileMetadataPreview(abspath, s)
 }
 
+func (h *Handler) clear_cached_previews() {
+	if h.last_rendered_preview != nil {
+		h.last_rendered_preview.Unload()
+		h.last_rendered_preview = nil
+	}
+	if h.prev_preview_for_smooth_transition != nil {
+		h.prev_preview_for_smooth_transition.Unload()
+		h.prev_preview_for_smooth_transition = nil
+	}
+}
+
 func (h *Handler) draw_preview_content(x, y, width, height int) {
 	matches, _ := h.get_results()
 	r := matches.At(h.state.CurrentIndex())
@@ -326,15 +348,36 @@ func (h *Handler) draw_preview_content(x, y, width, height int) {
 		h.render_wrapped_text_in_region("No preview available", x, y, width, height, false)
 		return
 	}
-	abspath := filepath.Join(h.state.CurrentDir(), r.text)
+	render := func() {
+		p := h.last_rendered_preview
+		if p.IsReady() || h.prev_preview_for_smooth_transition == nil {
+			p.Render(h, x, y, width, height)
+			if h.prev_preview_for_smooth_transition != nil {
+				h.prev_preview_for_smooth_transition.Unload()
+				h.prev_preview_for_smooth_transition = nil
+			}
+		} else {
+			h.prev_preview_for_smooth_transition.Render(h, x, y, width, height)
+		}
+	}
+
+	abspath := h.current_abspath()
 	if h.last_rendered_preview != nil {
-		h.last_rendered_preview.Unload()
+		if abspath == h.last_rendered_preview_abspath {
+			render()
+			return
+		}
+		if h.prev_preview_for_smooth_transition != nil {
+			h.prev_preview_for_smooth_transition.Unload()
+		}
+		h.prev_preview_for_smooth_transition = h.last_rendered_preview
 		h.last_rendered_preview = nil
 	}
 	if p := h.preview_manager.preview_for(abspath, r.ftype); p == nil {
 		h.render_wrapped_text_in_region("No preview available", x, y, width, height, false)
 	} else {
 		h.last_rendered_preview = p
-		p.Render(h, x, y, width, height)
+		h.last_rendered_preview_abspath = abspath
+		render()
 	}
 }

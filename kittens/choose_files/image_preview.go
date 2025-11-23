@@ -42,6 +42,7 @@ type PreviewRenderer interface {
 	Unmarshall(map[string]string) (any, error)
 	Render(string) (map[string][]byte, metadata, *images.ImageData, error)
 	ShowMetadata(h *Handler, s ShowData) int
+	String() string
 }
 
 type render_data struct {
@@ -71,6 +72,9 @@ type ImagePreview struct {
 	WakeupMainThread      func() bool
 }
 
+func (p *ImagePreview) String() string {
+	return fmt.Sprintf("ImagePreview{%#v, ready: %v, renderer: %s}", p.abspath, p.ready.Load(), p.renderer.String())
+}
 func (p *ImagePreview) IsValidForColorScheme(bool) bool { return true }
 func (p *ImagePreview) IsReady() bool                   { return p.ready.Load() || p.render_channel == nil }
 
@@ -132,7 +136,9 @@ func (p *ImagePreview) render_image(h *Handler, x, y, width, height int) {
 		abspath: p.abspath, metadata: p.metadata, x: x, y: y, width: width, height: height, cached_data: p.cached_data,
 		custom_metadata: p.custom_metadata,
 	})
-	h.graphics_handler.RenderImagePreview(h, p, x, y+offset, width, height-offset)
+	if p.custom_metadata.image != nil {
+		h.graphics_handler.RenderImagePreview(h, p, x, y+offset, width, height-offset)
+	}
 }
 
 func (p *ImagePreview) Render(h *Handler, x, y, width, height int) {
@@ -180,16 +186,20 @@ func (p *ImagePreview) start_rendering() {
 		return
 	}
 	if len(ans) > 0 {
-		if d := ans[IMAGE_METADATA_KEY]; d != "" {
-			if b, err := os.ReadFile(d); err == nil {
-				var m images.SerializableImageMetadata
-				if err = json.Unmarshal(b, &m); err == nil {
-					if cm, err := p.renderer.Unmarshall(ans); err == nil {
-						p.render_channel <- render_data{cached_data: ans, metadata: metadata{image: &m, custom: cm}}
-						return
+		mi := metadata{}
+		if mi.custom, err = p.renderer.Unmarshall(ans); err == nil {
+			if d := ans[IMAGE_METADATA_KEY]; d != "" {
+				if b, err := os.ReadFile(d); err == nil {
+					var m images.SerializableImageMetadata
+					if err = json.Unmarshal(b, &m); err == nil {
+						mi.image = &m
 					}
 				}
 			}
+		}
+		if mi.custom != nil || mi.image != nil {
+			p.render_channel <- render_data{cached_data: ans, metadata: mi}
+			return
 		}
 	}
 	rdata, metadata, img, err := p.renderer.Render(p.abspath)
@@ -206,6 +216,8 @@ func (p *ImagePreview) start_rendering() {
 }
 
 type ImagePreviewRenderer uint
+
+func (p ImagePreviewRenderer) String() string { return "ImagePreviewRenderer" }
 
 func (p ImagePreviewRenderer) Render(abspath string) (ans map[string][]byte, m metadata, img *images.ImageData, err error) {
 	if img, err = images.OpenImageFromPath(abspath); err != nil {
@@ -229,10 +241,9 @@ func (p ImagePreviewRenderer) Render(abspath string) (ans map[string][]byte, m m
 func (p ImagePreviewRenderer) Unmarshall(map[string]string) (any, error) { return nil, nil }
 
 func (p ImagePreviewRenderer) ShowMetadata(h *Handler, s ShowData) int {
-	text := ""
 	offset := 0
 	if m := s.custom_metadata.image; m != nil {
-		text = fmt.Sprintf("%s: %dx%d %s", m.Format_uppercase, m.Width, m.Height, humanize.Bytes(uint64(s.metadata.Size())))
+		text := fmt.Sprintf("%s: %dx%d %s", m.Format_uppercase, m.Width, m.Height, humanize.Bytes(uint64(s.metadata.Size())))
 		icon := icons.IconForPath("/a.gif")
 		text = icon + "  " + text
 		offset += h.render_wrapped_text_in_region(text, s.x, s.y, s.width, s.height, true)

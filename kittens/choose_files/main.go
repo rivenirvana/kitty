@@ -315,6 +315,7 @@ func (h *Handler) OnInitialize() (ans string, err error) {
 	err = h.graphics_handler.Initialize(h.lp)
 	h.result_manager.set_root_dir()
 	h.draw_screen()
+	h.lp.SendOverlayReady()
 	return
 }
 
@@ -771,18 +772,22 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 			}
 			return
 		}
-		m := strings.Join(selections, "\n")
-		fmt.Print(m)
-		if opts.WriteOutputTo != "" {
+		payload["paths"] = selections
+		if current_filter != "" {
+			payload["current_filter"] = current_filter
+		}
+		if tui.RunningAsUI() {
+			fmt.Println(tui.KittenOutputSerializer()(payload))
+		} else {
+			m := strings.Join(selections, "\n")
 			if opts.OutputFormat == "json" {
-				payload["paths"] = selections
-				if current_filter != "" {
-					payload["current_filter"] = current_filter
-				}
 				b, _ := json.MarshalIndent(payload, "", "  ")
 				m = string(b)
 			}
-			os.WriteFile(opts.WriteOutputTo, []byte(m), 0600)
+			fmt.Print(m)
+			if opts.WriteOutputTo != "" {
+				os.WriteFile(opts.WriteOutputTo, []byte(m), 0600)
+			}
 		}
 	}
 
@@ -798,6 +803,7 @@ func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
 	lp.ColorSchemeChangeNotifications()
 	handler := Handler{lp: lp, err_chan: make(chan error, 8), msg_printer: message.NewPrinter(utils.LanguageTag()), spinner: tui.NewSpinner("dots")}
 	defer handler.graphics_handler.Cleanup()
+	defer calibre_cleanup()
 	handler.rl = readline.New(lp, readline.RlInit{
 		Prompt: "> ", ContinuationPrompt: ". ", Completer: FilePromptCompleter(handler.state.CurrentDir),
 	})

@@ -29,6 +29,7 @@ type Preview interface {
 	IsValidForColorScheme(light bool) bool
 	Unload()
 	IsReady() bool
+	String() string
 }
 
 type PreviewManager struct {
@@ -82,6 +83,7 @@ type MessagePreview struct {
 	trailers []string
 }
 
+func (p MessagePreview) String() string                  { return fmt.Sprintf("MessagePreview{%#v}", p.title) }
 func (p MessagePreview) IsValidForColorScheme(bool) bool { return true }
 func (p MessagePreview) IsReady() bool                   { return true }
 
@@ -175,7 +177,7 @@ func NewDirectoryPreview(abspath string, metadata fs.FileInfo) Preview {
 	return &MessagePreview{title: title, msg: header, trailers: extra}
 }
 
-func NewFileMetadataPreview(abspath string, metadata fs.FileInfo) Preview {
+func NewFileMetadataPreview(abspath string, metadata fs.FileInfo) *MessagePreview {
 	ext := filepath.Ext(abspath)
 	if ext == "" {
 		ext = "File"
@@ -183,6 +185,19 @@ func NewFileMetadataPreview(abspath string, metadata fs.FileInfo) Preview {
 	title := icons.IconForFileWithMode(filepath.Base(abspath), metadata.Mode().Type(), false) + "  " + ext
 	h, t := write_file_metadata(abspath, metadata, nil)
 	return &MessagePreview{title: title, msg: h, trailers: t}
+}
+
+func NewFileMetadataPreviewWithError(abspath string, metadata fs.FileInfo, err error) *MessagePreview {
+	ext := filepath.Ext(abspath)
+	if ext == "" {
+		ext = "File"
+	}
+	title := icons.IconForFileWithMode(filepath.Base(abspath), metadata.Mode().Type(), false) + "  " + ext
+	h, t := write_file_metadata(abspath, metadata, nil)
+	ans := &MessagePreview{title: title, msg: h, trailers: t}
+	lines := style.WrapTextAsLines(err.Error(), 30, style.WrapOptions{})
+	ans.trailers = append(ans.trailers, lines...)
+	return ans
 }
 
 type highlighed_data struct {
@@ -197,6 +212,11 @@ type TextFilePreview struct {
 	ready                        atomic.Bool
 	light                        bool
 	path                         string
+	metadata                     fs.FileInfo
+}
+
+func (p *TextFilePreview) String() string {
+	return fmt.Sprintf("TextFilePreview{%#v, ready: %v}", p.path, p.ready.Load())
 }
 
 func (p *TextFilePreview) IsValidForColorScheme(light bool) bool { return p.light == light }
@@ -222,7 +242,8 @@ func (p *TextFilePreview) Render(h *Handler, x, y, width, height int) {
 	s := utils.NewLineScanner(text)
 	buf := strings.Builder{}
 	buf.Grow(1024 * height)
-	for num := 1 + h.render_wrapped_text_in_region(filepath.Base(p.path), x, y, width, height, true); s.Scan() && num < height; num++ {
+	title := icons.IconForPath(p.path) + "  " + filepath.Base(p.path) + fmt.Sprintf(" %s", humanize.Bytes(uint64(p.metadata.Size())))
+	for num := 1 + h.render_wrapped_text_in_region(title, x, y, width, height, true); s.Scan() && num < height; num++ {
 		line := s.Text()
 		truncated := wcswidth.TruncateToVisualLength(line, width)
 		buf.WriteString(fmt.Sprintf(loop.MoveCursorToTemplate, y+num, x))
@@ -244,7 +265,8 @@ func NewTextFilePreview(abspath string, metadata fs.FileInfo, highlighted_chan c
 	if !utf8.ValidString(text) {
 		text = "Error: not valid utf-8 text"
 	}
-	return &TextFilePreview{path: abspath, plain_text: sanitize(text), highlighted_chan: highlighted_chan, light: use_light_colors}
+	return &TextFilePreview{
+		path: abspath, plain_text: sanitize(text), highlighted_chan: highlighted_chan, light: use_light_colors, metadata: metadata}
 }
 
 type style_resolver struct {
@@ -326,6 +348,9 @@ func (pm *PreviewManager) preview_for(abspath string, ftype fs.FileMode) (ans Pr
 		} else {
 			return NewErrorPreview(err)
 		}
+	}
+	if IsSupportedByCalibre(abspath) {
+		return NewCalibrePreview(abspath, s, pm.settings, pm.WakeupMainThread)
 	}
 	return NewFileMetadataPreview(abspath, s)
 }

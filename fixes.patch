@@ -61,10 +61,10 @@ index 51399d715..d33f475ca 100644
      )
      options_spec = MATCH_WINDOW_OPTION + '''\n
 diff --git a/kitty/screen.c b/kitty/screen.c
-index 0c042e29b..32326cc77 100644
+index 7cbd16a0e..2e65172b4 100644
 --- a/kitty/screen.c
 +++ b/kitty/screen.c
-@@ -4343,7 +4343,7 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
+@@ -4349,7 +4349,7 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
              found_prompt = true;
              // change direction to downwards to find command output
              direction = 1;
@@ -73,7 +73,7 @@ index 0c042e29b..32326cc77 100644
              found_output = true; start = y1;
              found_prompt = true;
              direction = 1;
-@@ -4357,13 +4357,13 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
+@@ -4363,13 +4363,13 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
          // find upwards: find prompt after the output, and the first output
          while (y1 >= upward_limit) {
              line = checked_range_line(self, y1);
@@ -89,7 +89,7 @@ index 0c042e29b..32326cc77 100644
                  found_output = true; start = y1;
                  found_prompt = true;
                  break;
-@@ -4389,12 +4389,12 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
+@@ -4395,12 +4395,12 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig
                          break;
                      }
                      found_prompt = true;
@@ -104,7 +104,7 @@ index 0c042e29b..32326cc77 100644
                      found_next_prompt = true; end = y2;
                      break;
                  }
-@@ -4472,7 +4472,7 @@ cmd_output(Screen *self, PyObject *args) {
+@@ -4478,7 +4478,7 @@ cmd_output(Screen *self, PyObject *args) {
              bool reached_upper_limit = false;
              while (!found && !reached_upper_limit) {
                  line = checked_range_line(self, y);

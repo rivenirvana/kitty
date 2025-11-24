@@ -20,6 +20,7 @@ import (
 	"github.com/kovidgoyal/kitty/tools/tui/loop"
 	"github.com/kovidgoyal/kitty/tools/tui/readline"
 	"github.com/kovidgoyal/kitty/tools/utils"
+	"github.com/kovidgoyal/kitty/tools/utils/shlex"
 	"golang.org/x/text/message"
 )
 
@@ -279,6 +280,35 @@ func load_config(opts *Options) (ans *Config, err error) {
 		return nil, err
 	}
 	ans.KeyboardShortcuts = config.ResolveShortcuts(ans.KeyboardShortcuts)
+	parts, err := shlex.Split(ans.Video_preview)
+	if err != nil {
+		return nil, err
+	}
+	for _, x := range parts {
+		k, v, found := strings.Cut(x, "=")
+		if !found {
+			return nil, fmt.Errorf("invalid value %s in video_preview", x)
+		}
+		var i uint64
+		switch k {
+		case "duration":
+			if video_duration, err = strconv.ParseFloat(v, 64); err != nil {
+				return nil, fmt.Errorf("invalid %s in video_preview: %s", k, v)
+			}
+		case "fps":
+			if i, err = strconv.ParseUint(v, 10, 0); err != nil {
+				return nil, fmt.Errorf("invalid %s in video_preview: %s", k, v)
+			}
+			video_fps = int(i)
+		case "width":
+			if i, err = strconv.ParseUint(v, 10, 0); err != nil {
+				return nil, fmt.Errorf("invalid %s in video_preview: %s", k, v)
+			}
+			video_width = int(i)
+		default:
+			return nil, fmt.Errorf("unrecognized key in video_preview: %s", k)
+		}
+	}
 	return ans, nil
 }
 
@@ -748,6 +778,15 @@ var default_cwd string
 var use_light_colors bool
 
 func main(_ *cli.Command, opts *Options, args []string) (rc int, err error) {
+	if opts.ClearCache {
+		c, err := preview_cache()
+		if err != nil {
+			return 1, err
+		}
+		if err = c.Clear(); err != nil {
+			return 1, err
+		}
+	}
 	write_output := func(selections []string, interrupted bool, current_filter string) {
 		payload := make(map[string]any)
 		if err != nil {

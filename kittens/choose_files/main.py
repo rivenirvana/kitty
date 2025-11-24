@@ -77,6 +77,15 @@ File extension aliases for syntax highlight. For example, to syntax highlight
 Multiple aliases must be separated by spaces.
 ''')
 
+opt('video_preview', 'width=480 fps=10 duration=5', long_text='''
+Control how videos are sampled for previwing. The width controls
+the size of the generated thumbnail from the video. Duration controls
+how long the generated thumbnail plays for, in seconds. Note that when
+changing these you should also use the :code:`--clear-cache` flag
+otherwise it will not affect already cached previews.
+''')
+
+
 egr()  # }}}
 
 agr('shortcuts', 'Keyboard shortcuts')  # {{{
@@ -217,6 +226,11 @@ The format in which to write the output.
 
 --write-pid-to
 Path to a file to which to write the process ID (PID) of this process to.
+
+
+--clear-cache
+type=bool-set
+Clear the caches used by this kitten.
 '''.format(config_help=CONFIG_HELP.format(conf_name='choose-files', appname=appname)).format
 
 

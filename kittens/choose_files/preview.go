@@ -196,6 +196,7 @@ func NewFileMetadataPreviewWithError(abspath string, metadata fs.FileInfo, err e
 	h, t := write_file_metadata(abspath, metadata, nil)
 	ans := &MessagePreview{title: title, msg: h, trailers: t}
 	lines := style.WrapTextAsLines(err.Error(), 30, style.WrapOptions{})
+	ans.trailers = append(ans.trailers, "")
 	ans.trailers = append(ans.trailers, lines...)
 	return ans
 }
@@ -341,15 +342,19 @@ func (pm *PreviewManager) preview_for(abspath string, ftype fs.FileMode) (ans Pr
 		}
 		return ans
 	}
-	if strings.HasPrefix(mt, "image/") {
+	switch {
+	case strings.HasPrefix(mt, "image/"):
 		var r ImagePreviewRenderer
 		if ans, err := NewImagePreview(abspath, s, pm.settings, pm.WakeupMainThread, r); err == nil {
 			return ans
 		} else {
 			return NewErrorPreview(err)
 		}
-	}
-	if IsSupportedByCalibre(abspath) {
+
+	case strings.HasPrefix(mt, "video/"):
+		return NewFFMpegPreview(abspath, s, pm.settings, pm.WakeupMainThread)
+
+	case IsSupportedByCalibre(abspath):
 		return NewCalibrePreview(abspath, s, pm.settings, pm.WakeupMainThread)
 	}
 	return NewFileMetadataPreview(abspath, s)

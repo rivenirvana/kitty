@@ -150,17 +150,27 @@ def relative_path_if_possible(path: str, base: str) -> str:
 
 @result_handler(has_ready_notification=True)
 def handle_result(args: list[str], data: dict[str, Any], target_window_id: int, boss: BossType) -> None:
+    import shlex
+
+    from kitty.utils import shlex_split
     paths: list[str] = data.get('paths', [])
     if not paths:
         boss.ring_bell_if_allowed()
         return
-    path = paths[0]
     w = boss.window_id_map.get(target_window_id)
-    if w is not None:
-        cwd = w.cwd_of_child
+    if w is None:
+        boss.ring_bell_if_allowed()
+        return
+    cwd = w.cwd_of_child
+    items = []
+    for path in paths:
         if cwd:
             path = relative_path_if_possible(path, cwd)
-        w.paste_text(path)
+        if w.at_prompt and len(tuple(shlex_split(path))) > 1:
+            path = shlex.quote(path)
+        items.append(path)
+    text = (' ' if w.at_prompt else '\n').join(items)
+    w.paste_text(text)
 
 
 usage = '[directory to start choosing files in]'
@@ -219,9 +229,13 @@ Path to a file to which the output is written in addition to STDOUT.
 
 
 --output-format
-choices=text,json
+choices=text,json,shell,shell-relative
 default=text
-The format in which to write the output.
+The format in which to write the output. The :code:`text` format is absolute paths separated by newlines.
+The :code:`shell` format is quoted absolute paths separated by spaces, quoting is done only if needed. The
+:code:`shell-relative` format is the same as :code:`shell` except it returns paths relative to the starting
+directory. Note that when invoked from a mapping, this option is ignored,
+and either text or shell format is used automatically based on whether the cursor is at a shell prompt or not.
 
 
 --write-pid-to

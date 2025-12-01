@@ -2035,7 +2035,7 @@ class Boss:
                 s.shutdown(socket.SHUT_RDWR)
             s.close()
 
-    def display_scrollback(self, window: Window, data: bytes | str, input_line_number: int = 0, title: str = '', report_cursor: bool = True) -> None:
+    def display_scrollback(self, window: Window, data: bytes | str, input_line_number: int = 0, title: str = '', report_cursor: bool = True) -> Window | None:
 
         def prepare_arg(x: str) -> str:
             x = x.replace('INPUT_LINE_NUMBER', str(input_line_number))
@@ -2065,10 +2065,11 @@ class Boss:
                     else:
                         bdata = re.sub(br'\x1b\].*?\x1b\\', b'', bdata)
 
-            tab.new_special_window(
+            return tab.new_special_window(
                 SpecialWindow(cmd, bdata, title or _('History'), overlay_for=window.id, cwd=window.cwd_of_child),
                 copy_colors_from=self.active_window
                 )
+        return None
 
     @ac('misc', 'Edit the kitty.conf config file in your favorite text editor')
     def edit_config_file(self, *a: Any) -> None:
@@ -2871,7 +2872,9 @@ class Boss:
             window.refresh()
 
     def apply_new_options(self, opts: Options) -> None:
+        bg_before = get_options().background
         bg_colors_before = {w.id: w.screen.color_profile.default_bg for w in self.all_windows}
+        configured_color_scheme_changed = bg_before.is_dark != opts.background.is_dark
         # Update options storage
         set_options(opts, is_wayland(), self.args.debug_rendering, self.args.debug_font_fallback)
         apply_options_update()
@@ -2908,6 +2911,12 @@ class Boss:
         for w in self.all_windows:
             if w.screen.color_profile.default_bg != bg_colors_before.get(w.id):
                 self.default_bg_changed_for(w.id)
+            elif configured_color_scheme_changed:
+                # the application running in the window could have set the
+                # background color, so it wont change because of a config
+                # reload, but the application might still want to be notified
+                # that the user's color scheme preference has changed.
+                w.report_color_scheme_preference_if_wanted()
             w.refresh(reload_all_gpu_data=True)
         load_shader_programs.recompile_if_needed()
 
@@ -3393,4 +3402,6 @@ class Boss:
     def ungrab_keyboard(self) -> None:
         grab_keyboard(False)
 
-
+    def search_scrollback_in_active(self) -> None:
+        if w := self.active_window:
+            w.search_scrollback()

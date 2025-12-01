@@ -114,18 +114,21 @@ index f3ef7b6a0..0e0e5dbba 100644
                      int y2 = start; unsigned int num_lines = 0;
                      bool found_content = false;
 diff --git a/kitty/window.py b/kitty/window.py
-index f6d4243b8..9fcf982d7 100644
+index 692a28770..eacbf1591 100644
 --- a/kitty/window.py
 +++ b/kitty/window.py
-@@ -2098,12 +2098,12 @@ def make_exe_absolute(cmd: list[str], pid: int) -> None:
+@@ -2102,7 +2102,7 @@ def make_exe_absolute(cmd: list[str], pid: int) -> None:
  
      @ac('cp', 'Show scrollback in a pager like less')
-     def show_scrollback(self) -> None:
+     def show_scrollback(self) -> Optional['Window']:
 -        text = self.as_text(as_ansi=True, add_history=True, add_wrap_markers=True)
 +        text = self.as_text(as_ansi=True, add_history=True, add_wrap_markers=False)
          data = self.pipe_data(text, has_wrap_markers=True)
          cursor_on_screen = self.screen.scrolled_by < self.screen.lines - self.screen.cursor.y
-         get_boss().display_scrollback(self, data['text'], data['input_line_number'], report_cursor=cursor_on_screen)
+         return get_boss().display_scrollback(self, data['text'], data['input_line_number'], report_cursor=cursor_on_screen)
+@@ -2125,7 +2125,7 @@ def search_scrollback(self) -> None:
+                 w.screen.paste_bytes(sanitized)
+                 w.send_key('enter')
  
 -    def show_cmd_output(self, which: CommandOutput, title: str = 'Command output', as_ansi: bool = True, add_wrap_markers: bool = True) -> None:
 +    def show_cmd_output(self, which: CommandOutput, title: str = 'Command output', as_ansi: bool = True, add_wrap_markers: bool = False) -> None:

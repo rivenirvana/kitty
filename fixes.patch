@@ -61,7 +61,7 @@ index 51399d715..d33f475ca 100644
      )
      options_spec = MATCH_WINDOW_OPTION + '''\n
 diff --git a/kitty/screen.c b/kitty/screen.c
-index f3ef7b6a0..0e0e5dbba 100644
+index 3d7a17c11..420c2a9d4 100644
 --- a/kitty/screen.c
 +++ b/kitty/screen.c
 @@ -4348,7 +4348,7 @@ find_cmd_output(Screen *self, OutputOffset *oo, index_type start_screen_y, unsig

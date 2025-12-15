@@ -1,5 +1,5 @@
 diff --git a/docs/color-stack.rst b/docs/color-stack.rst
-index 465763571..6cf45e7f5 100644
+index 8494b8828..f946ea733 100644
 --- a/docs/color-stack.rst
 +++ b/docs/color-stack.rst
 @@ -52,8 +52,8 @@ than numbers. The syntax of the escape code is::
@@ -14,10 +14,10 @@ index 465763571..6cf45e7f5 100644
  ``key`` is a number from 0-255 to query or set the color values from the
  terminals ANSI color table, or one of the strings in the table below for
 diff --git a/docs/mapping.rst b/docs/mapping.rst
-index 098cdc96a..ce9a02ac1 100644
+index 260a2d402..17ac13930 100644
 --- a/docs/mapping.rst
 +++ b/docs/mapping.rst
-@@ -201,7 +201,7 @@ In order to make this work, you need to configure your editor as show below:
+@@ -201,7 +201,7 @@ In order to make this work, you need to configure your editor as shown below:
     In :file:`~/.vimrc` add:
      .. code-block:: vim
  
@@ -26,7 +26,7 @@ index 098cdc96a..ce9a02ac1 100644
          let &t_te = &t_te . "\033]1337;SetUserVar=in_editor\007"
  
  .. tab:: neovim
-@@ -214,9 +214,9 @@ In order to make this work, you need to configure your editor as show below:
+@@ -214,9 +214,9 @@ In order to make this work, you need to configure your editor as shown below:
              group = vim.api.nvim_create_augroup("KittySetVarVimEnter", { clear = true }),
              callback = function()
                  if vim.api.nvim_ui_send then
@@ -38,7 +38,7 @@ index 098cdc96a..ce9a02ac1 100644
                  end
              end,
          })
-@@ -225,7 +225,7 @@ In order to make this work, you need to configure your editor as show below:
+@@ -225,7 +225,7 @@ In order to make this work, you need to configure your editor as shown below:
              group = vim.api.nvim_create_augroup("KittyUnsetVarVimLeave", { clear = true }),
              callback = function()
                  if vim.api.nvim_ui_send then

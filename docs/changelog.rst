@@ -9,6 +9,22 @@ To update |kitty|, :doc:`follow the instructions <binary>`.
 Recent major new features
 ---------------------------
 
+Choose files, fast [0.45]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A new :doc:`kitten to select files at the speed of thought
+</kittens/choose-files>` with a keyboard first interface and support for
+content previews of text files with syntax highlighting, images, videos, e-books
+and more. Allows you to select files for use at the shell prompt or other
+terminal workflows with just a few keystrokes, similar to how fuzzy finders
+like `fzf <https://github.com/junegunn/fzf/>`__ operate, but designed for
+files in particular, leveraging the various innovations of kitty such as image
+display and variable sized text.
+
+On Linux, it can even be used as a :doc:`drop in replacement </kittens/desktop-ui>`
+for the File Open/Save dialog boxes in GUI programs.
+
+
 Sessions [0.43]
 ~~~~~~~~~~~~~~~~
 
@@ -134,8 +150,17 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.45.0 [future]
+0.45.1 [future]
+
+- choose-files kitten: Fix JXL image preview not working (:iss:`9323`)
+
+- Fix tab bar rendering glitches when using :opt:`tab_bar_filter` in some
+  circumstances (:iss:`9328`)
+
+0.45.0 [2025-12-24]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- A new :doc:`kitten to select files at the speed of thought </kittens/choose-files>` with a keyboard first interface and support for content previews of text files with syntax highlighting, images, videos, e-books and more (:iss:`9263`)
 
 - Add support for the `paste events protocol <https://rockorager.dev/misc/bracketed-paste-mime/>`__ (:iss:`9183`)
 
@@ -268,6 +293,8 @@ Detailed list of changes
   activation history as this is generally more important. In the future may
   have it save tab history as well (:pull:`9163`)
 
+- The :sc:`reset_terminal` shortcut to reset the terminal now also resets termios state
+
 0.43.1 [2025-10-01]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -326,6 +353,9 @@ Detailed list of changes
 - Fix :opt:`background_opacity` being non-linear especially with light color themes.
   Note that this might require you to adjust the value of this setting to get
   back your current look. (:iss:`8869`)
+
+- **backward incompatibility**: :opt:`background_opacity` no longer applies to
+  :opt:`background_image` instead add an alpha channel to the image itself
 
 - Add support for blinking text. Text marked as blinking now blinks in exact
   rhythm with the cursor. The blinking animation and max duration are

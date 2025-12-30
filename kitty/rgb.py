@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 # License: GPL v3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
-import re
-from contextlib import suppress
-
 from .fast_data_types import Color
 
 
@@ -17,38 +14,6 @@ def alpha_blend(top_color: Color, bottom_color: Color, alpha: float) -> Color:
             alpha_blend_channel(top_color.green, bottom_color.green, alpha),
             alpha_blend_channel(top_color.blue, bottom_color.blue, alpha)
     )
-
-
-def parse_single_color(c: str) -> int:
-    if len(c) == 1:
-        c += c
-    return int(c[:2], 16)
-
-
-def parse_sharp(spec: str) -> Color | None:
-    if len(spec) in (3, 6, 9, 12):
-        part_len = len(spec) // 3
-        colors = re.findall(fr'[a-fA-F0-9]{{{part_len}}}', spec)
-        return Color(*map(parse_single_color, colors))
-    return None
-
-
-def parse_rgb(spec: str) -> Color | None:
-    colors = spec.split('/')
-    if len(colors) == 3:
-        return Color(*map(parse_single_color, colors))
-    return None
-
-
-def parse_single_intensity(x: str) -> int:
-    return int(max(0, min(abs(float(x)), 1)) * 255)
-
-
-def parse_rgbi(spec: str) -> Color | None:
-    colors = spec.split('/')
-    if len(colors) == 3:
-        return Color(*map(parse_single_intensity, colors))
-    return None
 
 
 def color_from_int(x: int) -> Color:
@@ -69,21 +34,20 @@ def color_as_sgr(x: Color) -> str:
 
 def to_color(raw: str, validate: bool = False) -> Color | None:
     # See man XParseColor
-    x = raw.strip().lower()
-    ans = color_names.get(x)
-    if ans is not None:
+    # Strip inline comments (e.g., "oklch(...) # comment")
+    # For hex colors like "#ff0000", preserve the first #, but strip comments after spaces
+    raw = raw.strip()
+    if raw.startswith('#'):
+        # For hex colors, only strip comments after whitespace
+        # e.g., "#ff0000 # comment" -> "#ff0000"
+        raw = raw.partition(' ')[0]
+    else:
+        # For non-hex colors, strip everything after #
+        raw = raw.partition('#')[0].strip()
+    x = raw.lower()
+    if ans := color_names.get(x):
         return ans
-    val: Color | None = None
-    with suppress(Exception):
-        if raw.startswith('#'):
-            val = parse_sharp(raw[1:])
-        else:
-            k, sep, v = raw.partition(':')
-            if k == 'rgb':
-                val = parse_rgb(v)
-            elif k == 'rgbi':
-                val = parse_rgbi(v)
-    if val is None and validate:
+    if (val := Color.parse_color(x)) is None and validate:
         raise ValueError(f'Invalid color name: {raw!r}')
     return val
 

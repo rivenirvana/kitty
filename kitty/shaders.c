@@ -40,25 +40,15 @@ typedef struct UIRenderData {
     color_type background_color; // RGB only
 } UIRenderData;
 
-static inline bool
-pixel_scroll_enabled_for_render(const Screen *screen) {
-    return OPT(pixel_scroll) && !screen->paused_rendering.expires_at && screen->linebuf == screen->main_linebuf;
-}
-
-static inline unsigned int
-render_lines_for_screen(const Screen *screen) {
-    return screen->lines + (pixel_scroll_enabled_for_render(screen) ? 1u : 0u);
-}
-
 static inline float
 row_offset_for_screen(const Screen *screen) {
-    if (!pixel_scroll_enabled_for_render(screen) || !screen->cell_size.height) return 0.f;
+    if (!pixel_scroll_enabled(screen) || !screen->cell_size.height) return 0.f;
     return -1.f + (float)(screen->pixel_scroll_offset_y / (double)screen->cell_size.height);
 }
 
 static inline float
 scroll_offset_lines_for_screen(const Screen *screen) {
-    if (!pixel_scroll_enabled_for_render(screen) || !screen->cell_size.height) return 0.f;
+    if (!pixel_scroll_enabled(screen) || !screen->cell_size.height) return 0.f;
     return (float)(screen->pixel_scroll_offset_y / (double)screen->cell_size.height);
 }
 
@@ -508,7 +498,7 @@ cell_update_uniform_block(ssize_t vao_idx, Screen *screen, int uniform_buffer, c
     if (rd->cursor_opacity != 0 && cursor->is_visible) {
         rd->cursor_x1 = cursor->x, rd->cursor_y1 = cursor->y;
         rd->cursor_x2 = cursor->x, rd->cursor_y2 = cursor->y;
-        if (pixel_scroll_enabled_for_render(screen)) {
+        if (pixel_scroll_enabled(screen)) {
             rd->cursor_y1 += 1;
             rd->cursor_y2 += 1;
         }
@@ -952,7 +942,9 @@ draw_scrollbar(const UIRenderData *ui) {
     if (!window || !screen || !has_scrollbar(window, screen)) return;
 
     color_type bar_color = scrollbar_color(screen, OPT(scrollbar_handle_color)), track_color = scrollbar_color(screen, OPT(scrollbar_track_color));
-    float bar_frac = (float)screen->scrolled_by / MAX(1u, (float)screen->historybuf->count);
+    double cell_frac = screen->pixel_scroll_offset_y / screen->cell_size.height;
+    if (!OPT(pixel_scroll)) cell_frac = 0;
+    float bar_frac = (float)(screen->scrolled_by + cell_frac) / MAX(1u, (float)screen->historybuf->count);
     float opacity = OPT(scrollbar_handle_opacity);
     float track_opacity = window->scrollbar.is_hovering ? OPT(scrollbar_track_hover_opacity) : OPT(scrollbar_track_opacity);
     GLsizei scrollbar_width_px = (GLsizei)(OPT(scrollbar_width) * ui->cell_width);

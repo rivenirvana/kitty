@@ -120,10 +120,13 @@ typedef Status (* PFN_XIQueryVersion)(Display*,int*,int*);
 typedef int (* PFN_XISelectEvents)(Display*,Window,XIEventMask*,int);
 typedef XIDeviceInfo* (* PFN_XIQueryDevice)(Display*,int,int*);
 typedef void (* PFN_XIFreeDeviceInfo)(XIDeviceInfo*);
+typedef Status (* PFN_XIGetProperty)(Display *dpy, int deviceid, Atom property, long offset, long length, Bool delete_property, Atom type, Atom *type_return, int *format_return, unsigned long *num_items_return, unsigned long *bytes_after_return, unsigned char **data);
+
 #define XIQueryVersion _glfw.x11.xi.QueryVersion
 #define XISelectEvents _glfw.x11.xi.SelectEvents
 #define XIQueryDevice _glfw.x11.xi.QueryDevice
 #define XIFreeDeviceInfo _glfw.x11.xi.FreeDeviceInfo
+#define XIGetProperty _glfw.x11.xi.GetProperty
 
 typedef Bool (* PFN_XRenderQueryExtension)(Display*,int*,int*);
 typedef Status (* PFN_XRenderQueryVersion)(Display*dpy,int*,int*);
@@ -230,6 +233,18 @@ typedef struct AtomArray {
     MimeAtom *array;
     size_t sz, capacity;
 } AtomArray;
+
+typedef struct XIScrollValuator {
+    double increment, value, min, max; int number, resolution, mode; bool is_vertical;
+} XIScrollValuator;
+
+typedef struct XIScrollDevice {
+    bool is_highres;
+    int deviceid, sourceid;
+    XIScrollValuator valuators[8];
+    unsigned num_valuators;
+    char name[32];
+} XIScrollDevice;
 
 // X11-specific global data
 //
@@ -407,14 +422,10 @@ typedef struct _GLFWlibraryX11
         PFN_XISelectEvents SelectEvents;
         PFN_XIQueryDevice QueryDevice;
         PFN_XIFreeDeviceInfo FreeDeviceInfo;
-        // Smooth scrolling support
-        struct {
-            bool        available;
-            int         verticalAxis;
-            int         horizontalAxis;
-            double      verticalIncrement;
-            double      horizontalIncrement;
-        } smoothScroll;
+        PFN_XIGetProperty GetProperty;
+        XIScrollDevice scroll_devices[16];
+        unsigned num_scroll_devices;
+        Atom LIBINPUT_SCROLL_METHOD_ENABLED;
     } xi;
 
     struct {
@@ -487,3 +498,5 @@ void _glfwInputErrorX11(int error, const char* message);
 
 void _glfwGetSystemContentScaleX11(float* xscale, float* yscale, bool bypass_cache);
 void _glfwPushSelectionToManagerX11(void);
+void read_xi_scroll_devices(void);
+

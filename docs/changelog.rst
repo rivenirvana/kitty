@@ -155,7 +155,7 @@ Detailed list of changes
 
 - Pixel scrolling for the kitty scrollback buffer controlled via :opt:`pixel_scroll` (:pull:`9330`)
 
-- Wayland: momentum scrolling in the kitty scrollback buffer for touchpads and touchscreens, see :opt:`momentum_scroll`
+- Linux: momentum scrolling in the kitty scrollback buffer for touchpads and touchscreens, see :opt:`momentum_scroll`
 
 - X11: support high resolution scroll events from touchpads, etc
 
@@ -201,6 +201,15 @@ Detailed list of changes
   be incorrect in some cases (:iss:`9395`)
 
 - icat kitten: When catting multiple images display the images in input order (:iss:`9413`)
+
+- kitten @: Fix relative paths for --password-file being resolved relative to
+  CWD instead of the kitty config directory
+
+- kitten choose-files: Add a new binding of :kbd:`Alt+Enter` to modify the name
+  of an existing file when choosing a save file name (:iss:`9387`)
+
+- kitten choose-files: Fix TAB completion in the choose save file name prompt
+  not working with respect to the current working directory (:iss:`9387`)
 
 
 0.45.0 [2025-12-24]

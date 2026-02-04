@@ -403,16 +403,15 @@ void _glfwInputCursorEnter(_GLFWwindow* window, bool entered)
 
 // Notifies shared code of files or directories dropped on a window
 //
-int _glfwInputDrop(_GLFWwindow* window, const char *mime, const char *text, size_t sz)
+void _glfwInputDrop(_GLFWwindow* window, const char *mime, const char *text, size_t sz)
 {
     if (window->callbacks.drop)
-        return window->callbacks.drop((GLFWwindow*) window, mime, text, sz);
-    return 0;
+        window->callbacks.drop((GLFWwindow*) window, mime, text, sz);
 }
 
 // Notifies shared code of a drag event
 //
-int _glfwInputDragEvent(_GLFWwindow* window, int event, double xpos, double ypos, const char** mime_types, int mime_count)
+int _glfwInputDragEvent(_GLFWwindow* window, int event, double xpos, double ypos, const char** mime_types, int* mime_count)
 {
     if (window->callbacks.drag)
         return window->callbacks.drag((GLFWwindow*) window, event, xpos, ypos, mime_types, mime_count);
@@ -1139,6 +1138,15 @@ GLFWAPI int glfwStartDrag(GLFWwindow* handle, const GLFWdragitem* items, int ite
 
     _GLFW_REQUIRE_INIT_OR_RETURN(false);
     return _glfwPlatformStartDrag(window, items, item_count, thumbnail, operation);
+}
+
+GLFWAPI void glfwUpdateDragState(GLFWwindow* handle)
+{
+    _GLFWwindow* window = (_GLFWwindow*) handle;
+    assert(window != NULL);
+
+    _GLFW_REQUIRE_INIT();
+    _glfwPlatformUpdateDragState(window);
 }
 
 GLFWAPI int glfwJoystickPresent(int jid)

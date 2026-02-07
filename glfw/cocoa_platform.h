@@ -169,12 +169,17 @@ typedef struct _GLFWwindowNS
     GLFWcocoarenderframefun resizeCallback;
 
     // Current drag operation type for NSDraggingSource
-    GLFWDragOperationType dragOperationType;
+    int dragOperations;  // Bitfield of GLFWDragOperationType
 
     // Cached MIME types from drag enter (for move events)
     const char** dragMimes;
     int dragMimeCount;      // Current count of MIME types (may be reduced by callback)
     int dragMimeArraySize;  // Original array size for proper cleanup
+
+    // Pending drag source data requests (for cleanup on cancellation)
+    GLFWDragSourceData** pendingDragSourceData;
+    int pendingDragSourceDataCount;
+    int pendingDragSourceDataCapacity;
 } _GLFWwindowNS;
 
 // Cocoa-specific global data

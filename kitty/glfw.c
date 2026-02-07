@@ -735,18 +735,21 @@ get_mime_data(GLFWDropData *drop, const char **mimes, int mime_count, PyObject *
     for (int i = 0; i < mime_count; i++) {
         if (is_droppable_mime(mimes[i])) {
             RAII_PyObject(data, read_drop_data(drop, mimes[i]));
-            if (data == NULL) return ;
-            if (PyDict_SetItemString(ans, mimes[i], data) != 0) return ;
+            if (data == NULL) return;
+            if (PyDict_SetItemString(ans, mimes[i], data) != 0) return;
         }
     }
 }
 
 static void
-drop_callback(GLFWwindow *w, GLFWDropData *drop) {
+drop_callback(GLFWwindow *w, GLFWDropData *drop, bool from_self) {
     int num_mimes;
     const char** mimes = glfwGetDropMimeTypes(drop, &num_mimes);
     RAII_PyObject(ans, PyDict_New());
-    get_mime_data(drop, mimes, num_mimes, ans);
+    if (from_self) {
+        if (global_state.drag_source.drag_data) PyDict_Update(ans, global_state.drag_source.drag_data);
+        else log_error("Got a drop from self but drag_source.drag_data is NULL");
+    } else get_mime_data(drop, mimes, num_mimes, ans);
     RAII_PyObject(exc, PyErr_GetRaisedException());
     glfwFinishDrop(drop, GLFW_DRAG_OPERATION_COPY, true);
     if (!set_callback_window(w)) return;
@@ -770,6 +773,52 @@ application_close_requested_callback(int flags) {
         }
     }
 }
+
+#define ds (global_state.drag_source)
+static void
+try_sending_drag_source_data(id_type timer_id UNUSED, void *callback_data UNUSED) {
+    bool incomplete = false;
+    for (size_t i = 0; i < ds.num_ongoing_transfers; i++) {
+#define t ds.ongoing_transfers[i]
+        size_t sz = PyBytes_GET_SIZE(t.weakref_to_data_object);
+        ssize_t ret;
+        if (sz > t.offset) {
+            const char *data = PyBytes_AS_STRING(t.weakref_to_data_object);
+            ret = glfwSendDragData(t.platform_data, data + t.offset, sz - t.offset);
+        } else ret = glfwSendDragData(t.platform_data, NULL, 0);
+        if (ret >= 0) {
+            t.offset += ret;
+            if (t.offset < sz) incomplete = true;
+            else glfwSendDragData(t.platform_data, NULL, 0);  // tell glfw transfer is complete
+        } else {
+            log_error("Failed to send data from drag source with error: %s", strerror(-ret));
+            t.offset = sz;
+        }
+#undef t
+    }
+    if (incomplete) add_main_loop_timer(ms_double_to_monotonic_t(2), false, try_sending_drag_source_data, NULL, NULL);
+}
+
+static void
+drag_source_callback(GLFWwindow *window UNUSED, const char* mime_type, GLFWDragSourceData* source_data) {
+    PyObject *data;
+    if (mime_type == NULL) {
+        ds.is_active = false;
+        Py_CLEAR(ds.drag_data);
+        return;
+    }
+    if (!ds.is_active || !ds.drag_data || !(data = PyDict_GetItemString(ds.drag_data, mime_type))) {
+        glfwSendDragData(source_data, NULL, EINVAL);
+        return;
+    }
+    ensure_space_for(&ds, ongoing_transfers, ds.ongoing_transfers[0], ds.num_ongoing_transfers + 1, ongoing_transfers_capacity, 8, true);
+    ds.ongoing_transfers[ds.num_ongoing_transfers].platform_data = source_data;
+    ds.ongoing_transfers[ds.num_ongoing_transfers].weakref_to_data_object = data;
+    ds.ongoing_transfers[ds.num_ongoing_transfers].offset = 0;
+    ds.num_ongoing_transfers++;
+    try_sending_drag_source_data(0, NULL);
+}
+#undef ds
 
 static char*
 get_current_selection(void) {
@@ -1629,6 +1678,7 @@ create_os_window(PyObject UNUSED *self, PyObject *args, PyObject *kw) {
     glfwSetKeyboardCallback(glfw_window, key_callback);
     glfwSetDropCallback(glfw_window, drop_callback);
     glfwSetDragCallback(glfw_window, drag_callback);
+    glfwSetDragSourceCallback(glfw_window, drag_source_callback);
     monotonic_t now = monotonic();
     w->is_focused = true;
     w->cursor_blink_zero_time = now;
@@ -2704,6 +2754,32 @@ grab_keyboard(PyObject *self UNUSED, PyObject *action) {
     return Py_NewRef(glfwGrabKeyboard(action == Py_None ? 2 : PyObject_IsTrue(action)) ? Py_True : Py_False);
 }
 
+static PyObject*
+start_drag_with_data(PyObject *self UNUSED, PyObject *args, PyObject *kw) {
+    static const char* kwlist[] = {"os_window_id", "data_map", "thumbnail", "width", "height", "operations", NULL};
+    unsigned long long os_window_id; PyObject *data_map;
+    const unsigned char *thumbnail_data = NULL; Py_ssize_t thumbnail_sz = 0; int height = 0, width = 0;
+    int operations = GLFW_DRAG_OPERATION_MOVE;
+    if (!PyArg_ParseTupleAndKeywords(args, kw, "KO!|y#iii", (char**)kwlist,
+            &os_window_id, &PyDict_Type, &data_map, &thumbnail_data, &thumbnail_sz, &width, &height, &operations)) return NULL;
+    OSWindow *w = os_window_for_id(os_window_id);
+    if (!w || !w->handle) { PyErr_SetString(PyExc_KeyError, "OS Window with specified id does not exist"); return NULL; }
+    RAII_ALLOC(const char*, mime_types, calloc(PyDict_Size(data_map), sizeof(const char*)));
+    if (!mime_types) { PyErr_NoMemory(); return NULL; }
+    PyObject *key, *value; Py_ssize_t pos = 0; int num = 0;
+    while (PyDict_Next(data_map, &pos, &key, &value)) {
+        if (!PyUnicode_Check(key)) { PyErr_SetString(PyExc_TypeError, "data_map must have string keys"); return NULL; }
+        if (!PyBytes_Check(value)) { PyErr_SetString(PyExc_TypeError, "data_map must have bytes values"); return NULL; }
+        mime_types[num++] = PyUnicode_AsUTF8(key);
+    }
+    GLFWimage thumbnail = {.pixels=thumbnail_data, .width=width, .height=height};
+    global_state.drag_source.is_active = true;
+    Py_CLEAR(global_state.drag_source.drag_data); global_state.drag_source.drag_data = Py_NewRef(data_map);
+    global_state.drag_source.num_ongoing_transfers = 0;
+    glfwStartDrag(w->handle, mime_types, num, thumbnail_data ? &thumbnail : NULL, operations);
+    Py_RETURN_NONE;
+}
+
 // Boilerplate {{{
 
 static PyMethodDef module_methods[] = {
@@ -2715,6 +2791,7 @@ static PyMethodDef module_methods[] = {
     METHODB(grab_keyboard, METH_O),
     METHODB(pointer_name_to_css_name, METH_O),
     {"create_os_window", (PyCFunction)(void (*) (void))(create_os_window), METH_VARARGS | METH_KEYWORDS, NULL},
+    {"start_drag_with_data", (PyCFunction)(void (*) (void))(start_drag_with_data), METH_VARARGS | METH_KEYWORDS, NULL},
     METHODB(set_default_window_icon, METH_VARARGS),
     METHODB(set_os_window_icon, METH_VARARGS),
     METHODB(set_clipboard_data_types, METH_VARARGS),
@@ -2758,7 +2835,7 @@ static PyMethodDef module_methods[] = {
 };
 
 void cleanup_glfw(void) {
-    if (logo.pixels) free(logo.pixels);
+    if (logo.pixels) free((void*)logo.pixels);
     logo.pixels = NULL;
     Py_CLEAR(edge_spacing_func);
 #ifndef __APPLE__
@@ -2775,6 +2852,9 @@ init_glfw(PyObject *m) {
 
 // constants {{{
 #define ADDC(n) if(PyModule_AddIntConstant(m, #n, n) != 0) return false;
+    ADDC(GLFW_DRAG_OPERATION_MOVE);
+    ADDC(GLFW_DRAG_OPERATION_COPY);
+    ADDC(GLFW_DRAG_OPERATION_GENERIC);
     ADDC(GLFW_RELEASE);
     ADDC(GLFW_PRESS);
     ADDC(GLFW_REPEAT);

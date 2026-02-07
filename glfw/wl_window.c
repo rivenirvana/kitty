@@ -2554,7 +2554,9 @@ drop(void *data UNUSED, struct wl_data_device *wl_data_device UNUSED) {
                     destroy_data_offer(offer);
                     drop_data->eof_reached = false;
                     memset(offer, 0, sizeof(offer[0]));
-                    _glfwInputDrop(window, drop_data);
+                    // Check if the drop is from this application
+                    bool from_self = (_glfw.wl.drag.window_id != 0);
+                    _glfwInputDrop(window, drop_data, from_self);
                     // Note: drop_data is NOT freed here - application must call glfwFinishDrop
                     break;
                 }
@@ -3007,36 +3009,138 @@ GLFWAPI bool glfwWaylandBeep(GLFWwindow *handle) {
 // Drag operation implementation
 
 static void
-drag_source_send(void *data UNUSED, struct wl_data_source *source UNUSED, const char *mime_type, int fd) {
-    // Find the matching MIME type and send its data
-    for (int i = 0; i < _glfw.wl.drag.item_count; i++) {
-        if (strcmp(_glfw.wl.drag.items_mimes[i], mime_type) == 0) {
-            write_all(fd, (const char*)_glfw.wl.drag.items_data[i], _glfw.wl.drag.items_sizes[i]);
-            break;
+cleanup_wl_drag_source_data(GLFWDragSourceData* data) {
+    if (!data) return;
+    if (data->write_fd >= 0) {
+        close(data->write_fd);
+        data->write_fd = -1;
+    }
+    free(data->mime_type);
+    free(data);
+}
+
+// Remove a finished request from the pending requests array
+static void
+remove_wl_pending_request(int index) {
+    if (index < 0 || index >= _glfw.wl.drag.pending_request_count) return;
+
+    cleanup_wl_drag_source_data(_glfw.wl.drag.pending_requests[index]);
+
+    // Shift remaining elements
+    for (int i = index; i < _glfw.wl.drag.pending_request_count - 1; i++) {
+        _glfw.wl.drag.pending_requests[i] = _glfw.wl.drag.pending_requests[i + 1];
+    }
+    _glfw.wl.drag.pending_request_count--;
+}
+
+// Clean up all finished requests from the pending requests array
+static void
+cleanup_wl_finished_requests(void) {
+    for (int i = _glfw.wl.drag.pending_request_count - 1; i >= 0; i--) {
+        if (_glfw.wl.drag.pending_requests[i]->finished) {
+            remove_wl_pending_request(i);
         }
     }
-    close(fd);
+}
+
+// Clean up all pending requests
+static void
+cleanup_all_wl_pending_requests(void) {
+    for (int i = 0; i < _glfw.wl.drag.pending_request_count; i++) {
+        cleanup_wl_drag_source_data(_glfw.wl.drag.pending_requests[i]);
+    }
+    free(_glfw.wl.drag.pending_requests);
+    _glfw.wl.drag.pending_requests = NULL;
+    _glfw.wl.drag.pending_request_count = 0;
+    _glfw.wl.drag.pending_request_capacity = 0;
+}
+
+// Add a request to the pending requests array
+static bool
+add_wl_pending_request(GLFWDragSourceData* request) {
+    // First, clean up any finished requests to make room
+    cleanup_wl_finished_requests();
+
+    // Grow the array if necessary
+    if (_glfw.wl.drag.pending_request_count >= _glfw.wl.drag.pending_request_capacity) {
+        // Cap maximum capacity to prevent excessive memory use
+        if (_glfw.wl.drag.pending_request_capacity >= 512) {
+            return false;
+        }
+        int new_capacity = _glfw.wl.drag.pending_request_capacity ? _glfw.wl.drag.pending_request_capacity * 2 : 4;
+        GLFWDragSourceData** new_array = realloc(_glfw.wl.drag.pending_requests,
+                                                  new_capacity * sizeof(GLFWDragSourceData*));
+        if (!new_array) return false;
+        _glfw.wl.drag.pending_requests = new_array;
+        _glfw.wl.drag.pending_request_capacity = new_capacity;
+    }
+
+    _glfw.wl.drag.pending_requests[_glfw.wl.drag.pending_request_count++] = request;
+    return true;
+}
+
+static void
+cleanup_drag(struct wl_data_source *source) {
+    // Notify the application that the drag source is closed
+    _GLFWwindow *window = _glfwWindowForId(_glfw.wl.drag.window_id);
+    if (window && window->callbacks.dragSource) _glfwInputDragSourceRequest(window, NULL, NULL);
+
+    // Clean up all pending data requests
+    cleanup_all_wl_pending_requests();
+
+    // Clean up MIME type strings
+    for (int i = 0; i < _glfw.wl.drag.mime_count; i++) free(_glfw.wl.drag.mimes[i]);
+    free(_glfw.wl.drag.mimes);
+    _glfw.wl.drag.mimes = NULL;
+    _glfw.wl.drag.mime_count = 0;
+    _glfw.wl.drag.window_id = 0;
+    if (_glfw.wl.drag.drag_viewport) wp_viewport_destroy(_glfw.wl.drag.drag_viewport);
+    if (_glfw.wl.drag.drag_icon) wl_surface_destroy(_glfw.wl.drag.drag_icon);
+    _glfw.wl.drag.drag_icon = NULL; _glfw.wl.drag.drag_viewport = NULL;
+    if (_glfw.wl.drag.source && _glfw.wl.drag.source != source) wl_data_source_destroy(_glfw.wl.drag.source);
+    _glfw.wl.drag.source = NULL;
+    if (source) wl_data_source_destroy(source);
+}
+
+static void
+drag_source_send(void *data UNUSED, struct wl_data_source *source UNUSED, const char *mime_type, int fd) {
+    _GLFWwindow *window = _glfwWindowForId(_glfw.wl.drag.window_id);
+    if (!window) {
+        close(fd);
+        return;
+    }
+
+    // Create a new drag source data request
+    GLFWDragSourceData* request = calloc(1, sizeof(GLFWDragSourceData));
+    if (!request) {
+        close(fd);
+        return;
+    }
+
+    request->window_id = _glfw.wl.drag.window_id;
+    request->mime_type = _glfw_strdup(mime_type);
+    request->write_fd = fd;
+    request->finished = false;
+    request->error_code = 0;
+
+    if (!request->mime_type) {
+        cleanup_wl_drag_source_data(request);
+        return;
+    }
+
+    // Add to pending requests array
+    if (!add_wl_pending_request(request)) {
+        cleanup_wl_drag_source_data(request);
+        return;
+    }
+
+    // Notify the application via callback
+    _glfwInputDragSourceRequest(window, mime_type, request);
 }
 
 static void
 drag_source_cancelled(void *data UNUSED, struct wl_data_source *source) {
-    // Clean up drag data
-    if (_glfw.wl.drag.source == source) {
-        for (int i = 0; i < _glfw.wl.drag.item_count; i++) {
-            free(_glfw.wl.drag.items_data[i]);
-            free(_glfw.wl.drag.items_mimes[i]);
-        }
-        free(_glfw.wl.drag.items_data);
-        free(_glfw.wl.drag.items_sizes);
-        free(_glfw.wl.drag.items_mimes);
-        _glfw.wl.drag.items_data = NULL;
-        _glfw.wl.drag.items_sizes = NULL;
-        _glfw.wl.drag.items_mimes = NULL;
-        _glfw.wl.drag.item_count = 0;
-        _glfw.wl.drag.source = NULL;
-    }
-    wl_data_source_destroy(source);
-    _glfw.wl.drag.source = NULL;
+    cleanup_drag(source);
 }
 
 static void
@@ -3065,100 +3169,146 @@ static const struct wl_data_source_listener drag_source_listener = {
     .dnd_finished = drag_source_dnd_finished,
 };
 
+void
+_glfwPlatformCancelDrag(_GLFWwindow* window UNUSED) {
+    cleanup_drag(_glfw.wl.drag.source);
+}
+
 int
-_glfwPlatformStartDrag(_GLFWwindow* window, const GLFWdragitem* items, int item_count, const GLFWimage* thumbnail, GLFWDragOperationType operation) {
+_glfwPlatformStartDrag(_GLFWwindow* window, const char* const* mime_types, int mime_count, const GLFWimage* thumbnail, int operations) {
     if (!_glfw.wl.dataDeviceManager) {
         _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Data device manager not available");
-        return false;
+        return EIO;
     }
 
     if (!_glfw.wl.dataDevice) {
         _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Data device not available");
-        return false;
+        return EIO;
     }
 
     // Clean up any existing drag operation
-    if (_glfw.wl.drag.source) drag_source_cancelled(NULL, _glfw.wl.drag.source);
+    _glfwPlatformCancelDrag(window);
 
     // Create the data source
     _glfw.wl.drag.source = wl_data_device_manager_create_data_source(_glfw.wl.dataDeviceManager);
     if (!_glfw.wl.drag.source) {
         _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Failed to create data source for drag");
-        return false;
+        return EIO;
     }
 
-    // Set the DND action based on operation type
+    // Set the DND action based on operation type (bitfield)
     uint32_t wl_actions = 0;
-    switch (operation) {
-        case GLFW_DRAG_OPERATION_COPY: wl_actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY; break;
-        case GLFW_DRAG_OPERATION_MOVE: wl_actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE; break;
-        case GLFW_DRAG_OPERATION_GENERIC:
-            wl_actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE; break;
-    }
+    if (operations & GLFW_DRAG_OPERATION_COPY)
+        wl_actions |= WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY;
+    if (operations & GLFW_DRAG_OPERATION_MOVE)
+        wl_actions |= WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE;
+    if (operations & GLFW_DRAG_OPERATION_GENERIC)
+        wl_actions |= WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE;
     wl_data_source_set_actions(_glfw.wl.drag.source, wl_actions);
 
-    // Allocate storage for drag data (copy the data)
-    _glfw.wl.drag.items_data = calloc(item_count, sizeof(unsigned char*));
-    _glfw.wl.drag.items_sizes = calloc(item_count, sizeof(size_t));
-    _glfw.wl.drag.items_mimes = calloc(item_count, sizeof(char*));
-    _glfw.wl.drag.item_count = item_count;
+    // Allocate storage for MIME types
+    _glfw.wl.drag.mimes = calloc(mime_count, sizeof(char*));
+    _glfw.wl.drag.mime_count = mime_count;
+    _glfw.wl.drag.window_id = window->id;
 
-    if (!_glfw.wl.drag.items_data || !_glfw.wl.drag.items_sizes || !_glfw.wl.drag.items_mimes) {
-        drag_source_cancelled(NULL, _glfw.wl.drag.source);
-        _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Failed to allocate drag data");
-        return false;
+    if (!_glfw.wl.drag.mimes) {
+        _glfwPlatformCancelDrag(window);
+        _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Failed to allocate drag MIME types");
+        return ENOMEM;
     }
 
-    // Copy the data and offer MIME types
-    for (int i = 0; i < item_count; i++) {
-        _glfw.wl.drag.items_data[i] = malloc(items[i].data_size);
-        if (!_glfw.wl.drag.items_data[i]) {
-            drag_source_cancelled(NULL, _glfw.wl.drag.source);
-            _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Failed to allocate drag item data");
-            return false;
+    // Copy MIME types and offer them
+    for (int i = 0; i < mime_count; i++) {
+        _glfw.wl.drag.mimes[i] = _glfw_strdup(mime_types[i]);
+        if (!_glfw.wl.drag.mimes[i]) {
+            _glfwPlatformCancelDrag(window);
+            _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Failed to allocate drag MIME type");
+            return ENOMEM;
         }
-        memcpy(_glfw.wl.drag.items_data[i], items[i].data, items[i].data_size);
-        _glfw.wl.drag.items_sizes[i] = items[i].data_size;
-        _glfw.wl.drag.items_mimes[i] = _glfw_strdup(items[i].mime_type);
-        if (!_glfw.wl.drag.items_mimes[i]) {
-            drag_source_cancelled(NULL, _glfw.wl.drag.source);
-            _glfwInputError(GLFW_PLATFORM_ERROR, "Wayland: Failed to allocate drag item MIME type");
-            return false;
-        }
-        wl_data_source_offer(_glfw.wl.drag.source, items[i].mime_type);
+        wl_data_source_offer(_glfw.wl.drag.source, mime_types[i]);
     }
 
     wl_data_source_add_listener(_glfw.wl.drag.source, &drag_source_listener, NULL);
 
     // Set up the drag icon surface if thumbnail is provided
-    struct wl_surface* icon_surface = NULL;
-    struct wl_buffer* icon_buffer = NULL;
-
     if (thumbnail && thumbnail->pixels) {
-        icon_surface = wl_compositor_create_surface(_glfw.wl.compositor);
-        if (icon_surface) {
+        struct wl_buffer* icon_buffer = NULL;
+        _glfw.wl.drag.drag_icon = wl_compositor_create_surface(_glfw.wl.compositor);
+        if (_glfw.wl.drag.drag_icon) {
             icon_buffer = createShmBuffer(thumbnail, false, true);
             if (icon_buffer) {
-                wl_surface_attach(icon_surface, icon_buffer, 0, 0);
-                wl_surface_commit(icon_surface);
+                if (_glfw.wl.wp_viewporter) {
+                    double f_scale = _glfwWaylandWindowScale(window);
+                    int logical_width = (int)(thumbnail->width / f_scale);
+                    int logical_height = (int)(thumbnail->height / f_scale);
+                    _glfw.wl.drag.drag_viewport = wp_viewporter_get_viewport(
+                            _glfw.wl.wp_viewporter, _glfw.wl.drag.drag_icon);
+                    wp_viewport_set_destination(_glfw.wl.drag.drag_viewport, logical_width, logical_height);
+                } else {
+                    int scale = _glfwWaylandIntegerWindowScale(window);
+                    wl_surface_set_buffer_scale(_glfw.wl.drag.drag_icon, scale);
+                }
+                wl_surface_attach(_glfw.wl.drag.drag_icon, icon_buffer, 0, 0);
+                wl_surface_commit(_glfw.wl.drag.drag_icon);
+                wl_buffer_destroy(icon_buffer);
             }
         }
     }
-
     // Start the drag operation
-    wl_data_device_start_drag(_glfw.wl.dataDevice, _glfw.wl.drag.source,
-                              window->wl.surface, icon_surface,
+    wl_data_device_start_drag(_glfw.wl.dataDevice, _glfw.wl.drag.source, window->wl.surface, _glfw.wl.drag.drag_icon,
                               _glfw.wl.pointer_serial);
 
-    // Clean up icon resources (the compositor takes ownership)
-    if (icon_buffer) {
-        wl_buffer_destroy(icon_buffer);
-    }
-    if (icon_surface) {
-        wl_surface_destroy(icon_surface);
+    return 0;
+}
+
+ssize_t
+_glfwPlatformSendDragData(GLFWDragSourceData* source_data, const void* data, size_t size) {
+    if (!source_data || source_data->finished) return -EINVAL;
+    if (source_data->write_fd < 0) return -EIO;
+
+    // End of data: NULL data pointer and size zero
+    if (!data && size == 0) {
+        source_data->finished = true;
+        close(source_data->write_fd);
+        source_data->write_fd = -1;
+        // Clean up this and any other finished requests
+        cleanup_wl_finished_requests();
+        return 0;
     }
 
-    return true;
+    // Error from application: NULL data pointer and size is error code
+    if (!data && size > 0) {
+        source_data->finished = true;
+        source_data->error_code = (int)size;
+        close(source_data->write_fd);
+        source_data->write_fd = -1;
+        // Clean up this and any other finished requests
+        cleanup_wl_finished_requests();
+        return 0;
+    }
+
+    // Non-blocking write - retry on EINTR, return 0 on would-block
+    ssize_t written;
+    do {
+        written = write(source_data->write_fd, data, size);
+    } while (written < 0 && errno == EINTR);
+
+    if (written < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Would block, return 0 bytes written
+            return 0;
+        }
+        // Actual error
+        source_data->finished = true;
+        source_data->error_code = errno;
+        close(source_data->write_fd);
+        source_data->write_fd = -1;
+        // Clean up this and any other finished requests
+        cleanup_wl_finished_requests();
+        return -errno;
+    }
+
+    return written;
 }
 
 void

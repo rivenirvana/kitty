@@ -412,10 +412,14 @@ typedef struct _GLFWlibraryWayland
     // Drag operation state
     struct {
         struct wl_data_source* source;
-        unsigned char** items_data;
-        size_t* items_sizes;
-        char** items_mimes;
-        int item_count;
+        char** mimes;           // Array of MIME type strings
+        int mime_count;         // Number of MIME types
+        GLFWid window_id;    // Window that initiated the drag
+        GLFWDragSourceData** pending_requests; // Array of pending data requests
+        int pending_request_count;  // Number of pending requests
+        int pending_request_capacity; // Capacity of the pending requests array
+        struct wl_surface *drag_icon;
+        struct wp_viewport *drag_viewport;
     } drag;
 } _GLFWlibraryWayland;
 

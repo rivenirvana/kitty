@@ -2016,56 +2016,54 @@ static void processEvent(XEvent *event)
 
                 if (_glfw.x11.xdnd.drag_accepted && _glfw.x11.xdnd.mimes_count > 0)
                 {
-                    // Heap-allocate drop data structure for chunked reading
-                    // The application is responsible for freeing this via glfwFinishDrop
-                    GLFWDropData* drop_data = calloc(1, sizeof(GLFWDropData));
-                    if (!drop_data) {
-                        _glfwInputError(GLFW_OUT_OF_MEMORY, "X11: Failed to allocate drop data");
-                        // Send XdndFinished to avoid leaving drag source hanging
-                        if (_glfw.x11.xdnd.version >= 2)
-                        {
-                            XEvent reply = { ClientMessage };
-                            reply.xclient.window = _glfw.x11.xdnd.source;
-                            reply.xclient.message_type = _glfw.x11.XdndFinished;
-                            reply.xclient.format = 32;
-                            reply.xclient.data.l[0] = window->x11.handle;
-                            reply.xclient.data.l[1] = 0; // Failure
-                            reply.xclient.data.l[2] = None;
+                    if (_glfw.x11.xdnd.version >= 2) {
+                        XEvent reply = { ClientMessage };
+                        reply.xclient.window = _glfw.x11.xdnd.source;
+                        reply.xclient.message_type = _glfw.x11.XdndFinished;
+                        reply.xclient.format = 32;
+                        reply.xclient.data.l[0] = window->x11.handle;
+                        reply.xclient.data.l[1] = 0; // Failure
+                        reply.xclient.data.l[2] = None;
 
-                            XSendEvent(_glfw.x11.display, _glfw.x11.xdnd.source,
-                                       False, NoEventMask, &reply);
-                            XFlush(_glfw.x11.display);
-                        }
-                        return;
+                        XSendEvent(_glfw.x11.display, _glfw.x11.xdnd.source,
+                                    False, NoEventMask, &reply);
+                        XFlush(_glfw.x11.display);
                     }
-                    // Transfer ownership of mimes array from global to drop object
-                    drop_data->mime_types = (const char**)_glfw.x11.xdnd.mimes;
-                    drop_data->mime_count = _glfw.x11.xdnd.mimes_count;
-                    drop_data->mime_array_size = _glfw.x11.xdnd.mimes_array_size;
-                    // Clear global references since drop object now owns the mimes
-                    _glfw.x11.xdnd.mimes = NULL;
-                    _glfw.x11.xdnd.mimes_count = 0;
-                    _glfw.x11.xdnd.mimes_array_size = 0;
 
-                    drop_data->current_mime = NULL;
-                    drop_data->read_fd = -1;
-                    drop_data->bytes_read = 0;
-                    drop_data->platform_data = NULL;
-                    drop_data->eof_reached = false;
-                    drop_data->current_data = NULL;
-                    drop_data->data_offset = 0;
-                    drop_data->x11_data_size = 0;
-                    // Store X11-specific drop state in the drop object
-                    drop_data->x11_drop_target = window->x11.handle;
-                    drop_data->x11_drop_time = (_glfw.x11.xdnd.version >= 1) ?
-                        (unsigned long)event->xclient.data.l[2] : CurrentTime;
-                    drop_data->x11_source = _glfw.x11.xdnd.source;
-                    drop_data->x11_version = _glfw.x11.xdnd.version;
-
+                    // // Heap-allocate drop data structure for chunked reading
+                    // // The application is responsible for freeing this via glfwFinishDrop
+                    // GLFWDropData* drop_data = calloc(1, sizeof(GLFWDropData));
+                    // if (!drop_data) {
+                    //     _glfwInputError(GLFW_OUT_OF_MEMORY, "X11: Failed to allocate drop data");
+                    //     // Send XdndFinished to avoid leaving drag source hanging
+                    // // Transfer ownership of mimes array from global to drop object
+                    // drop_data->mime_types = (const char**)_glfw.x11.xdnd.mimes;
+                    // drop_data->mime_count = _glfw.x11.xdnd.mimes_count;
+                    // drop_data->mime_array_size = _glfw.x11.xdnd.mimes_array_size;
+                    // // Clear global references since drop object now owns the mimes
+                    // _glfw.x11.xdnd.mimes = NULL;
+                    // _glfw.x11.xdnd.mimes_count = 0;
+                    // _glfw.x11.xdnd.mimes_array_size = 0;
+                    //
+                    // drop_data->current_mime = NULL;
+                    // drop_data->read_fd = -1;
+                    // drop_data->bytes_read = 0;
+                    // drop_data->platform_data = NULL;
+                    // drop_data->eof_reached = false;
+                    // drop_data->current_data = NULL;
+                    // drop_data->data_offset = 0;
+                    // drop_data->x11_data_size = 0;
+                    // // Store X11-specific drop state in the drop object
+                    // drop_data->x11_drop_target = window->x11.handle;
+                    // drop_data->x11_drop_time = (_glfw.x11.xdnd.version >= 1) ?
+                    //     (unsigned long)event->xclient.data.l[2] : CurrentTime;
+                    // drop_data->x11_source = _glfw.x11.xdnd.source;
+                    // drop_data->x11_version = _glfw.x11.xdnd.version;
+                    //
                     // Check if the drop is from this application
-                    bool from_self = (_glfw.x11.drag.source_window != None &&
-                                      _glfw.x11.xdnd.source == _glfw.x11.drag.source_window);
-                    _glfwInputDrop(window, drop_data, from_self);
+                    // bool from_self = (_glfw.x11.drag.source_window != None &&
+                                      // _glfw.x11.xdnd.source == _glfw.x11.drag.source_window);
+                    // _glfwInputDrop(window, drop_data, from_self);
 
                     // Note: drop_data is NOT freed here - application must call glfwFinishDrop
                 }
@@ -2276,6 +2274,16 @@ static void processEvent(XEvent *event)
 //////                       GLFW internal API                      //////
 //////////////////////////////////////////////////////////////////////////
 
+ssize_t _glfwPlatformReadAvailableDropData(GLFWwindow *w, GLFWDropEvent *ev, char *buffer, size_t sz) {
+    (void) w; (void) ev; (void) buffer; (void)sz; return -EINVAL;
+}
+void _glfwPlatformEndDrop(GLFWwindow *w, GLFWDragOperationType op) {
+    (void)w; (void)op;
+}
+int _glfwPlatformRequestDropData(_GLFWwindow *window, const char *mime) {
+    (void)window; (void)mime; return EINVAL;
+}
+void _glfwPlatformRequestDropUpdate(_GLFWwindow* window) { (void)window; }
 // Retrieve a single window property of the specified type
 // Inspired by fghGetWindowProperty from freeglut
 //
@@ -4111,12 +4119,33 @@ void _glfwPlatformUpdateDragState(_GLFWwindow* window) {
     XFlush(_glfw.x11.display);
 }
 
-const char**
-_glfwPlatformGetDropMimeTypes(GLFWDropData* drop, int* count) {
-    if (!drop || !count) return NULL;
-    *count = drop->mime_count;
-    return drop->mime_types;
+#if 0
+
+// Implement the following, see getting data from drop comment block in wl_window.c and below for
+// the X11 basic implementation. Also have to refactor dragging. start drag
+// should allow optionally specifying data for some mime types up front. This
+// is needed on macOS for the text/plain and text/uri-list mime types. Also
+// there should be a data write ready callback similar to the data read
+// available callback in the refactored drop API.
+
+void
+_glfwPlatformEndDrop(GLFWwindow *w, GLFWDragOperationType op) {
 }
+
+ssize_t
+_glfwPlatformReadAvailableDropData(GLFWwindow *w, GLFWDropEvent *ev, char *buffer, size_t sz) {
+}
+
+int
+_glfwPlatformRequestDropData(_GLFWwindow *window, const char *mime) {
+}
+
+void
+_glfwPlatformRequestDropUpdate(_GLFWwindow* window) {
+}
+
+
+// below is the old code
 
 ssize_t
 _glfwPlatformReadDropData(GLFWDropData* drop, const char* mime, void* buffer, size_t capacity, monotonic_t timeout) {
@@ -4223,6 +4252,7 @@ _glfwPlatformReadDropData(GLFWDropData* drop, const char* mime, void* buffer, si
     return (ssize_t)to_read;
 }
 
+
 void
 _glfwPlatformFinishDrop(GLFWDropData* drop, GLFWDragOperationType operation, bool success) {
     if (!drop) return;
@@ -4279,4 +4309,4 @@ _glfwPlatformFinishDrop(GLFWDropData* drop, GLFWDragOperationType operation, boo
     // Free the heap-allocated drop data structure
     free(drop);
 }
-
+#endif

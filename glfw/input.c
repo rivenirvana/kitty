@@ -402,14 +402,6 @@ void _glfwInputCursorEnter(_GLFWwindow* window, bool entered)
         window->callbacks.cursorEnter((GLFWwindow*) window, entered);
 }
 
-// Notifies shared code of files or directories dropped on a window
-//
-void _glfwInputDrop(_GLFWwindow* window, GLFWDropData* drop, bool from_self)
-{
-    if (window->callbacks.drop)
-        window->callbacks.drop((GLFWwindow*) window, drop, from_self);
-}
-
 // Notifies shared code of a drag event
 //
 int _glfwInputDragEvent(_GLFWwindow* window, int event, double xpos, double ypos, const char** mime_types, int* mime_count)
@@ -417,6 +409,18 @@ int _glfwInputDragEvent(_GLFWwindow* window, int event, double xpos, double ypos
     if (window->callbacks.drag)
         return window->callbacks.drag((GLFWwindow*) window, event, xpos, ypos, mime_types, mime_count);
     return 0;
+}
+
+// Notifies shared code of a drop event
+size_t _glfwInputDropEvent(_GLFWwindow *window, GLFWDropEventType type, double xpos, double ypos, const char** mimes, size_t num_mimes, bool from_self) {
+    if (!window->callbacks.drop_event) return 0;
+    GLFWDropEvent ev = {
+        .mimes=mimes, .type=type, .xpos=xpos, .ypos=ypos, .num_mimes=num_mimes, .from_self=from_self,
+        .read_data=type == GLFW_DROP_DATA_AVAILABLE ? _glfwPlatformReadAvailableDropData : NULL,
+        .finish_drop=type == GLFW_DROP_DATA_AVAILABLE || type == GLFW_DROP_DROP ? _glfwPlatformEndDrop : NULL,
+    };
+    window->callbacks.drop_event((GLFWwindow*)window, &ev);
+    return ev.num_mimes;
 }
 
 // Notifies shared code that the OS wants data for a MIME type from the drag source
@@ -692,6 +696,18 @@ void _glfwCenterCursorInContentArea(_GLFWwindow* window)
 //////////////////////////////////////////////////////////////////////////
 //////                        GLFW public API                       //////
 //////////////////////////////////////////////////////////////////////////
+
+GLFWAPI int glfwRequestDropData(GLFWwindow *window, const char *mime) {
+    return _glfwPlatformRequestDropData((_GLFWwindow*)window, mime);
+}
+
+GLFWAPI void glfwEndDrop(GLFWwindow *window, GLFWDragOperationType op) {
+    _glfwPlatformEndDrop(window, op);
+}
+
+GLFWAPI void glfwRequestDropUpdate(GLFWwindow *window) {
+    _glfwPlatformRequestDropUpdate((_GLFWwindow*)window);
+}
 
 GLFWAPI bool glfwGetIgnoreOSKeyboardProcessing(void) {
     return _glfw.ignoreOSKeyboardProcessing;
@@ -1118,16 +1134,6 @@ GLFWAPI GLFWscrollfun glfwSetScrollCallback(GLFWwindow* handle,
     return cbfun;
 }
 
-GLFWAPI GLFWdropfun glfwSetDropCallback(GLFWwindow* handle, GLFWdropfun cbfun)
-{
-    _GLFWwindow* window = (_GLFWwindow*) handle;
-    assert(window != NULL);
-
-    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
-    _GLFW_SWAP_POINTERS(window->callbacks.drop, cbfun);
-    return cbfun;
-}
-
 GLFWAPI GLFWdragfun glfwSetDragCallback(GLFWwindow* handle, GLFWdragfun cbfun)
 {
     _GLFWwindow* window = (_GLFWwindow*) handle;
@@ -1137,6 +1143,17 @@ GLFWAPI GLFWdragfun glfwSetDragCallback(GLFWwindow* handle, GLFWdragfun cbfun)
     _GLFW_SWAP_POINTERS(window->callbacks.drag, cbfun);
     return cbfun;
 }
+
+GLFWAPI GLFWdropeventfun glfwSetDropEventCallback(GLFWwindow* handle, GLFWdropeventfun cbfun)
+{
+    _GLFWwindow* window = (_GLFWwindow*) handle;
+    assert(window != NULL);
+
+    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
+    _GLFW_SWAP_POINTERS(window->callbacks.drop_event, cbfun);
+    return cbfun;
+}
+
 
 GLFWAPI GLFWdragsourcefun glfwSetDragSourceCallback(GLFWwindow* handle, GLFWdragsourcefun cbfun)
 {
@@ -1169,39 +1186,6 @@ GLFWAPI ssize_t glfwSendDragData(GLFWDragSourceData* source_data, const void* da
     if (!source_data) return -EINVAL;
     _GLFW_REQUIRE_INIT_OR_RETURN(-EINVAL);
     return _glfwPlatformSendDragData(source_data, data, size);
-}
-
-GLFWAPI void glfwUpdateDragState(GLFWwindow* handle)
-{
-    _GLFWwindow* window = (_GLFWwindow*) handle;
-    assert(window != NULL);
-
-    _GLFW_REQUIRE_INIT();
-    _glfwPlatformUpdateDragState(window);
-}
-
-GLFWAPI const char** glfwGetDropMimeTypes(GLFWDropData* drop, int* count)
-{
-    assert(drop != NULL);
-    assert(count != NULL);
-
-    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
-    return _glfwPlatformGetDropMimeTypes(drop, count);
-}
-
-GLFWAPI ssize_t glfwReadDropData(GLFWDropData* drop, const char* mime, void* buffer, size_t capacity, monotonic_t timeout)
-{
-    if (drop == NULL || mime == NULL || buffer == NULL || capacity < 1) return -EINVAL;
-    _GLFW_REQUIRE_INIT_OR_RETURN(-1);
-    return _glfwPlatformReadDropData(drop, mime, buffer, capacity, timeout);
-}
-
-GLFWAPI void glfwFinishDrop(GLFWDropData* drop, GLFWDragOperationType operation, bool success)
-{
-    assert(drop != NULL);
-
-    _GLFW_REQUIRE_INIT();
-    _glfwPlatformFinishDrop(drop, operation, success);
 }
 
 GLFWAPI int glfwJoystickPresent(int jid)

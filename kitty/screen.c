@@ -2318,7 +2318,8 @@ screen_cursor_at_a_shell_prompt(const Screen *self) {
 }
 
 bool
-screen_prompt_supports_click_events(const Screen *self) {
+screen_prompt_supports_click_events(const Screen *self, bool *is_relative) {
+    *is_relative = (bool) self->prompt_settings.relative_click_events;
     return (bool) self->prompt_settings.supports_click_events;
 }
 
@@ -3065,7 +3066,13 @@ parse_prompt_mark(Screen *self, char *buf, PromptKind *pk) {
         if (strcmp(token, "k=s") == 0) *pk = SECONDARY_PROMPT;
         else if (strcmp(token, "redraw=0") == 0) self->prompt_settings.redraws_prompts_at_all = 0;
         else if (strcmp(token, "special_key=1") == 0) self->prompt_settings.uses_special_keys_for_cursor_movement = 1;
-        else if (strcmp(token, "click_events=1") == 0) self->prompt_settings.supports_click_events = 1;
+        else if (strcmp(token, "click_events=1") == 0) {
+            self->prompt_settings.supports_click_events = 1;
+            self->prompt_settings.relative_click_events = 0;
+        } else if (strcmp(token, "click_events=2") == 0) {
+            self->prompt_settings.supports_click_events = 1;
+            self->prompt_settings.relative_click_events = 1;
+        }
     }
 }
 
@@ -5059,9 +5066,8 @@ screen_history_scroll(Screen *self, int amt, bool upwards) {
         amt = MIN((unsigned int)amt, self->scrolled_by);
         amt *= -1;
     }
-    if (amt == 0) return false;
     unsigned int new_scroll = MIN(self->scrolled_by + amt, self->historybuf->count);
-    if (new_scroll != self->scrolled_by) {
+    if (new_scroll != self->scrolled_by || (new_scroll == 0 && self->pixel_scroll_offset_y != 0)) {
         self->scrolled_by = new_scroll;
         reset_pixel_scroll(self, 0);
         dirty_scroll(self);
@@ -5079,6 +5085,7 @@ screen_fractional_scroll(Screen *self, double amt) {
     int lines = (int)integral_part;
     double pixels = fractional_part * self->cell_size.height;
     if (amt > 0) {  // downwards
+        if (fractional_part != 0) pixels = MAX(1, pixels);
         pixels = pixels > self->pixel_scroll_offset_y ? pixels - self->pixel_scroll_offset_y : 0;
         self->pixel_scroll_offset_y = 0;
         self->scrolled_by = self->scrolled_by > (unsigned)lines ? self->scrolled_by - lines : 0;
@@ -5086,6 +5093,7 @@ screen_fractional_scroll(Screen *self, double amt) {
             self->scrolled_by--; self->pixel_scroll_offset_y = self->cell_size.height - pixels;
         }
     } else {
+        if (fractional_part != 0) pixels = MIN(-1, pixels);
         self->pixel_scroll_offset_y -= pixels;  // pixels is negative
         if (self->pixel_scroll_offset_y >= self->cell_size.height) {
             self->pixel_scroll_offset_y = 0; self->scrolled_by++;

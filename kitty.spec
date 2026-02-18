@@ -10,8 +10,8 @@
 %global nerdfontver 3.4.0
 
 Name:           kitty
-Version:        {{{git_custom_version}}}
-Release:        {{{git_custom_release}}}%{?dist}
+Version:        0.0.0
+Release:        0%{?dist}
 Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 
 # GPL-3.0-only: kitty
@@ -25,7 +25,7 @@ Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 # MIT: 3rdparty/verstable.h
 License:        GPL-3.0-only AND LGPL-2.1-or-later AND Zlib AND (MIT AND CC0-1.0) AND BSD-2-Clause AND CC0-1.0 AND MIT
 URL:            https://sw.kovidgoyal.net/kitty
-Source0:        {{{git_repo_pack}}}
+Source0:        %{name}-%{version}.tar.gz
 Source4:        go-vendor-tools.toml
 # Add AppData manifest file
 # * https://github.com/kovidgoyal/kitty/pull/2088
@@ -195,7 +195,6 @@ This package contains the documentation for %{name}.
 
 
 %prep
-{{{git_repo_setup_macro}}}
 %autopatch -p1
 
 go_vendor_archive create --config ./go-vendor-tools.toml ./ -O kitty-vendor.tar.xz
@@ -333,5 +332,3 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 
 
 %changelog
-* {{{git_custom_date}}} Arvin Verain <arvinverain@proton.me> - {{{git_custom_version}}}-{{{git_custom_release}}}
-- Nightly build from git master

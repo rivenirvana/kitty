@@ -10,8 +10,8 @@
 %global nerdfontver 3.4.0
 
 Name:           kitty
-Version:        0.0.0
-Release:        0%{?dist}
+Version:        0.0.1
+Release:        1%{?dist}
 Summary:        Cross-platform, fast, feature full, GPU based terminal emulator
 
 # GPL-3.0-only: kitty
@@ -332,3 +332,6 @@ desktop-file-validate %{buildroot}/%{_datadir}/applications/*.desktop
 
 
 %changelog
+* Wed Feb 18 2026 Arvin Verain <arvinverain@proton.me> 0.0.1-1
+- new package built with tito
+

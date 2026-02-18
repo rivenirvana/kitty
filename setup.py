@@ -1570,7 +1570,7 @@ MimeType=image/*;application/x-sh;application/x-shellscript;inode/directory;text
 
 def macos_info_plist(for_quake: str = '') -> bytes:
     import plistlib
-    VERSION = '.'.join(map(str, version))
+    VERSION = '0.0.1'.join(map(str, version))
 
     def access(what: str, verb: str = 'would like to access') -> str:
         return f'A program running inside kitty {verb} {what}'

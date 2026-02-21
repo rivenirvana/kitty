@@ -25,6 +25,7 @@ enum {
     TINT_PROGRAM,
     TRAIL_PROGRAM,
     BLIT_PROGRAM,
+    SCREENSHOT_PROGRAM,
     ROUNDED_RECT_PROGRAM,
     NUM_PROGRAMS
 };
@@ -363,6 +364,10 @@ typedef struct {
 } BlitProgramLayout;
 static BlitProgramLayout blit_program_layout;
 
+typedef struct {
+    ScreenshotUniforms uniforms;
+} ScreenshotProgramLayout;
+static ScreenshotProgramLayout screenshot_program_layout;
 
 static void
 init_cell_program(void) {
@@ -390,6 +395,7 @@ init_cell_program(void) {
     get_uniform_locations_tint(TINT_PROGRAM, &tint_program_layout.uniforms);
     get_uniform_locations_trail(TRAIL_PROGRAM, &trail_program_layout.uniforms);
     get_uniform_locations_blit(BLIT_PROGRAM, &blit_program_layout.uniforms);
+    get_uniform_locations_screenshot(SCREENSHOT_PROGRAM, &screenshot_program_layout.uniforms);
     get_uniform_locations_rounded_rect(ROUNDED_RECT_PROGRAM, &rounded_rect_program_layout.uniforms);
 }
 
@@ -718,6 +724,7 @@ set_cell_uniforms(bool force) {
             glUniform1f(cu->text_gamma_adjustment, text_gamma_adjustment);
         }
         bind_program(BLIT_PROGRAM); glUniform1i(blit_program_layout.uniforms.image, GRAPHICS_UNIT);
+        bind_program(SCREENSHOT_PROGRAM); glUniform1i(screenshot_program_layout.uniforms.image, GRAPHICS_UNIT);
         constants_set = true;
     }
 }
@@ -1439,9 +1446,10 @@ setup_os_window_for_rendering(OSWindow *os_window, Tab *tab, Window *active_wind
 // dimension of the source region (viewport or central region without tab bar).
 // Takes a screenshot of a rectangular region of the OSWindow's framebuffer.
 // The region parameter specifies which part of the framebuffer to capture.
-// Scaling is performed on the GPU using the BLIT_PROGRAM shader for better performance.
+// Scaling is performed on the GPU using the SCREENSHOT_PROGRAM shader for better performance.
+// The shader properly handles sRGB color space conversion and downscaling.
 // Setting the thumbnail dimensions to zero disables scaling.
-static void
+void
 take_screenshot_of_rectangular_region(OSWindow *os_window, Region region, unsigned char *dst_buf, unsigned *thumb_w, unsigned *thumb_h) {
     unsigned vw = os_window->viewport_width;
     unsigned vh = os_window->viewport_height;
@@ -1479,8 +1487,8 @@ take_screenshot_of_rectangular_region(OSWindow *os_window, Region region, unsign
     bind_framebuffer_for_output(temp_framebuffer);
     save_viewport_using_bottom_left_origin(0, 0, *thumb_w, *thumb_h);
 
-    // Use the blit program to render the scaled framebuffer
-    bind_program(BLIT_PROGRAM);
+    // Use the screenshot program to render the scaled framebuffer with proper color space handling
+    bind_program(SCREENSHOT_PROGRAM);
 
     // Set source rectangle (normalized coordinates: 0 to 1)
     // Note: OpenGL texture origin is bottom-left, but Region uses top-left origin
@@ -1489,10 +1497,13 @@ take_screenshot_of_rectangular_region(OSWindow *os_window, Region region, unsign
     float src_right_norm = (float)region.right / (float)vw;
     float src_bottom_norm = (float)(vh - region.bottom) / (float)vh;
     float src_top_norm = (float)(vh - region.top) / (float)vh;
-    glUniform4f(blit_program_layout.uniforms.src_rect, src_left_norm, src_top_norm, src_right_norm, src_bottom_norm);
+    glUniform4f(screenshot_program_layout.uniforms.src_rect, src_left_norm, src_top_norm, src_right_norm, src_bottom_norm);
 
     // Set destination rectangle (NDC coordinates: -1 to 1)
-    glUniform4f(blit_program_layout.uniforms.dest_rect, -1.0f, -1.0f, 1.0f, 1.0f);
+    glUniform4f(screenshot_program_layout.uniforms.dest_rect, -1.0f, -1.0f, 1.0f, 1.0f);
+
+    // Set the source texture size for proper downscaling
+    glUniform2f(screenshot_program_layout.uniforms.src_size, (float)vw, (float)vh);
 
     // Bind the source texture
     glActiveTexture(GL_TEXTURE0 + GRAPHICS_UNIT);
@@ -1515,56 +1526,6 @@ take_screenshot_of_rectangular_region(OSWindow *os_window, Region region, unsign
     free_texture(&temp_texture);
     free_framebuffer(&temp_framebuffer);
 }
-
-// The include_tab_bar parameter controls whether the tab bar is included in the screenshot.
-// When false, only the central window area is captured (excluding the tab bar).
-// Scaling is performed on the GPU using the BLIT_PROGRAM shader for better performance.
-// Setting the thumbnail dimensions to zero disables scaling.
-// Must be called only after rendering the OS Window but before the buffer is swapped.
-void
-take_screenshot_of_oswindow(OSWindow *os_window, unsigned char *dst_buf, unsigned *thumb_w, unsigned *thumb_h, bool include_tab_bar) {
-    Region region = {0};
-    // Calculate the region to capture (excluding tab bar if requested)
-    if (!include_tab_bar) {
-        Region central = {0}, tab_bar = {0};
-        os_window_regions(os_window, &central, &tab_bar);
-        if (tab_bar.bottom > tab_bar.top) {
-            // Tab bar is present, exclude it from the screenshot
-            region = central;
-        } else {
-            // No tab bar, capture the entire viewport
-            region.right = os_window->viewport_width;
-            region.bottom = os_window->viewport_height;
-        }
-    } else {
-        // Capture the entire viewport including tab bar
-        region.right = os_window->viewport_width;
-        region.bottom = os_window->viewport_height;
-    }
-    take_screenshot_of_rectangular_region(os_window, region, dst_buf, thumb_w, thumb_h);
-}
-
-// Takes a screenshot of a specific window identified by window_id.
-// The screenshot captures only the rectangular region occupied by the window.
-// Scaling is performed on the GPU using the BLIT_PROGRAM shader for better performance.
-// Setting the thumbnail dimensions to zero disables scaling.
-// Must be called only after rendering the parent OS Window but before the
-// buffer is swapped.
-bool
-take_screenshot_of_window(id_type window_id, unsigned char *dst_buf, unsigned *thumb_w, unsigned *thumb_h) {
-    Window *window = window_for_window_id(window_id);
-    OSWindow *os_window = os_window_for_kitty_window(window_id);
-    if (!window || !os_window) return false;
-    // Compute the region for this window
-    Region region;
-    region.left = window->render_data.geometry.left;
-    region.top = window->render_data.geometry.top;
-    region.right = window->render_data.geometry.right;
-    region.bottom = window->render_data.geometry.bottom;
-    take_screenshot_of_rectangular_region(os_window, region, dst_buf, thumb_w, thumb_h);
-    return true;
-}
-
 // }}}
 
 // Python API {{{
@@ -1681,7 +1642,7 @@ init_shaders(PyObject *module) {
 #define C(x) if (PyModule_AddIntConstant(module, #x, x) != 0) { PyErr_NoMemory(); return false; }
     C(CELL_PROGRAM); C(CELL_FG_PROGRAM); C(CELL_BG_PROGRAM); C(BORDERS_PROGRAM);
     C(GRAPHICS_PROGRAM); C(GRAPHICS_PREMULT_PROGRAM); C(GRAPHICS_ALPHA_MASK_PROGRAM);
-    C(BGIMAGE_PROGRAM); C(TINT_PROGRAM); C(TRAIL_PROGRAM); C(BLIT_PROGRAM); C(ROUNDED_RECT_PROGRAM);
+    C(BGIMAGE_PROGRAM); C(TINT_PROGRAM); C(TRAIL_PROGRAM); C(BLIT_PROGRAM); C(SCREENSHOT_PROGRAM); C(ROUNDED_RECT_PROGRAM);
     C(GLSL_VERSION);
     C(GL_VERSION);
     C(GL_VENDOR);

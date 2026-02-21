@@ -647,6 +647,9 @@ window_focus_callback(GLFWwindow *w, int focused) {
 
 static int
 is_droppable_mime(const char *mime) {
+    static char tab_mime[64] = {0};
+    if (!tab_mime[0]) snprintf(tab_mime, sizeof(tab_mime), "application/net.kovidgoyal.kitty-tab-%d", getpid());
+    if (strcmp(mime, tab_mime) == 0) return 4;
     if (strcmp(mime, "text/uri-list") == 0) return 3;
     if (strcmp(mime, "text/plain;charset=utf-8") == 0) return 2;
     if (strcmp(mime, "text/plain") == 0) return 1;
@@ -674,7 +677,7 @@ update_allowed_mimes_for_drop(GLFWDropEvent *ev) {
             }
         }
         // Second pass: sort by cached priorities (descending)
-        for (size_t i = 0; i < new_count - 1; i++) {
+        for (size_t i = 0; i + 1 < new_count; i++) {
             for (size_t j = i + 1; j < new_count; j++) {
                 if (prio_arr[j] > prio_arr[i]) {
                     SWAP(ev->mimes[i], ev->mimes[j]);
@@ -721,12 +724,18 @@ read_drop_data(GLFWwindow *window, GLFWDropEvent *ev) {
 static void
 on_drop(GLFWwindow *window, GLFWDropEvent *ev) {
     if (!set_callback_window(window)) return;
+    OSWindow *os_window = global_state.callback_os_window;
     switch (ev->type) {
         case GLFW_DROP_ENTER:
         case GLFW_DROP_MOVE:
-            global_state.callback_os_window->last_drag_event.x = (int)(ev->xpos * global_state.callback_os_window->viewport_x_ratio);
-            global_state.callback_os_window->last_drag_event.y = (int)(ev->ypos * global_state.callback_os_window->viewport_y_ratio);
+            os_window->last_drag_event.x = (int)(ev->xpos * os_window->viewport_x_ratio);
+            os_window->last_drag_event.y = (int)(ev->ypos * os_window->viewport_y_ratio);
             on_mouse_position_update(ev->xpos, ev->ypos);
+            if (global_state.drag_source.is_active) {
+                call_boss(on_drop_move, "KiiO",
+                    os_window->id, os_window->last_drag_event.x, os_window->last_drag_event.y,
+                    ev->from_self ? Py_True : Py_False);
+            }
             /* fallthrough */
         case GLFW_DROP_STATUS_UPDATE:
             update_allowed_mimes_for_drop(ev);
@@ -737,6 +746,7 @@ on_drop(GLFWwindow *window, GLFWDropEvent *ev) {
             Py_CLEAR(global_state.drop_dest.data);
             if (ev->from_self) {
                 if (global_state.drag_source.drag_data) {
+                    global_state.drag_source.was_dropped = true;
                     WINDOW_CALLBACK(on_drop, "OOii", global_state.drag_source.drag_data, Py_True,
                         global_state.callback_os_window->last_drag_event.x, global_state.callback_os_window->last_drag_event.y);
                 } else log_error("Got a drop from self but drag_source.drag_data is NULL");
@@ -795,12 +805,17 @@ drag_source_callback(GLFWwindow *window UNUSED, GLFWDragEvent *ev) {
             ds.accepted_mime_type = ev->mime_type ? strdup(ev->mime_type) : NULL;
             break;
         case GLFW_DRAG_ACTION_CHANGED: ds.action = ev->action; break;
-        case GLFW_DRAG_DROPPED: ds.was_dropped = true; break;
+        case GLFW_DRAG_DROPPED:
+            ds.was_dropped = true;
+            break;
         case GLFW_DRAG_CANCELLED:
             ds.was_canceled = true;
             /* fallthrough */
         case GLFW_DRAG_FINSHED:
-            ds.is_active = false;
+            call_boss(on_drag_source_finished, "OOsiO",
+                    ds.was_dropped ? Py_True : Py_False, ds.was_canceled ? Py_True: Py_False,
+                    ds.accepted_mime_type ? ds.accepted_mime_type : "",
+                    ds.action, ds.drag_data ? ds.drag_data : Py_None);
             free_drag_source();
             break;
     }

@@ -282,6 +282,7 @@ CELL_PROGRAM: int
 CELL_FG_PROGRAM: int
 CELL_BG_PROGRAM: int
 BLIT_PROGRAM: int
+SCREENSHOT_PROGRAM: int
 ROUNDED_RECT_PROGRAM: int
 DECORATION: int
 BLINK: int
@@ -1018,9 +1019,8 @@ def cocoa_window_id(os_window_id: int) -> int:
     pass
 
 
-def swap_tabs(os_window_id: int, a: int, b: int) -> None:
-    pass
-
+def swap_tabs(os_window_id: int, a: int, b: int) -> None: ...
+def reorder_tabs(os_window_id: int, *tab_ids: int) -> None: ...
 
 def set_active_tab(os_window_id: int, a: int) -> None:
     pass
@@ -1817,3 +1817,11 @@ def start_drag_with_data(
     os_window_id: int, data_map: dict[str, bytes], thumbnail: bytes = b'', width: int = 0, height: int = 0,
     operations: int = GLFW_DRAG_OPERATION_MOVE
 ) -> None: ...
+
+def set_tab_being_dragged(tab_id: int = 0, drag_started: bool = False, x: float = 0, y: float = 0) -> None: ...
+def get_tab_being_dragged() -> tuple[int, bool, float, float]: ...
+def request_callback_with_thumbnail(
+        callback: str, os_window_id: int, window_id: int = 0, include_tab_bar: bool = False,
+        scale: float = 0.25, max_width: int = 480
+) -> None: ...
+def png_from_32bit_rgba_data(data: bytes, width: int, height: int, flip_vertically: bool = False) -> bytes: ...

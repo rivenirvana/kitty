@@ -3078,11 +3078,47 @@ GLFWAPI bool glfwWaylandBeep(GLFWwindow *handle) {
 }
 
 // Drag source {{{
+
 static void
-drag_source_cancelled(void *data UNUSED, struct wl_data_source *source UNUSED) {
+drag_toplevel_xdg_surface_configure(void *data UNUSED, struct xdg_surface *surface, uint32_t serial) {
+    xdg_surface_ack_configure(surface, serial);
+    if (_glfw.wl.drag.toplevel_buffer) {
+        wl_surface_attach(_glfw.wl.drag.drag_icon, _glfw.wl.drag.toplevel_buffer, 0, 0);
+        wl_surface_damage(_glfw.wl.drag.drag_icon, 0, 0, INT32_MAX, INT32_MAX);
+        wl_buffer_destroy(_glfw.wl.drag.toplevel_buffer);
+        _glfw.wl.drag.toplevel_buffer = NULL;
+    }
+    if (_glfw.wl.drag.drag_icon) wl_surface_commit(_glfw.wl.drag.drag_icon);
+}
+
+static const struct xdg_surface_listener drag_toplevel_xdg_surface_listener = {
+    .configure = drag_toplevel_xdg_surface_configure,
+};
+
+static void drag_toplevel_configure(void *data UNUSED, struct xdg_toplevel *toplevel UNUSED,
+                                    int32_t width UNUSED, int32_t height UNUSED,
+                                    struct wl_array *states UNUSED) {}
+static void drag_toplevel_close(void *data UNUSED, struct xdg_toplevel *toplevel UNUSED) {}
+#ifdef XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION
+static void drag_toplevel_configure_bounds(void *data UNUSED, struct xdg_toplevel *toplevel UNUSED,
+                                           int32_t width UNUSED, int32_t height UNUSED) {}
+static void drag_toplevel_wm_capabilities(void *data UNUSED, struct xdg_toplevel *toplevel UNUSED,
+                                          struct wl_array *caps UNUSED) {}
+#endif
+static const struct xdg_toplevel_listener drag_toplevel_listener = {
+    .configure = drag_toplevel_configure,
+    .close = drag_toplevel_close,
+#ifdef XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION
+    .configure_bounds = drag_toplevel_configure_bounds,
+    .wm_capabilities = drag_toplevel_wm_capabilities,
+#endif
+};
+
+static void
+cancel_drag(GLFWDragEventType type) {
     _GLFWwindow *window = _glfwWindowForId(_glfw.drag.window_id);
     if (window) {
-        GLFWDragEvent ev = {.type=GLFW_DRAG_CANCELLED};
+        GLFWDragEvent ev = {.type=type};
         _glfwInputDragSourceRequest(window, &ev);
     }
     _glfwFreeDragSourceData();
@@ -3120,7 +3156,7 @@ send_drag_data(_GLFWwindow *window, size_t i) {
     bool has_preset_data = _glfw.drag.items[i].data_size > 0;
 #define on_fail _glfwInputError(\
         GLFW_PLATFORM_ERROR, "Wayland: failed to write drag source data to pipe with error: %s", strerror(errno)); \
-        drag_source_cancelled(NULL, NULL)
+        cancel_drag(GLFW_DRAG_CANCELLED);
 
     if (dr.sz > dr.offset) {
         ret = write_as_much_as_possible(dr.fd, dr.pending_data + dr.offset, dr.sz - dr.offset);
@@ -3150,7 +3186,7 @@ send_drag_data(_GLFWwindow *window, size_t i) {
         _glfwInputDragSourceRequest(window, &ev);
         if (ev.err_num) {
             if (ev.err_num == EAGAIN) { removeWatch(&_glfw.wl.eventLoopData, dr.watch_id); dr.watch_id = 0; }
-            else drag_source_cancelled(NULL, NULL);
+            else cancel_drag(GLFW_DRAG_CANCELLED);
         } else {
             if (ev.data_sz) {
                 ret = write_as_much_as_possible(dr.fd, ev.data, ev.data_sz);
@@ -3190,6 +3226,28 @@ add_drag_watch(int fd) {
 }
 
 int
+_glfwPlatformChangeDragImage(const GLFWimage *thumbnail) {
+    if (!thumbnail || !thumbnail->pixels) return 0;
+    struct wl_buffer* icon_buffer = createShmBuffer(thumbnail, false, true);
+    if (!icon_buffer) return ENOMEM;
+    _GLFWwindow *window = _glfwWindowForId(_glfw.drag.window_id);
+    if (_glfw.wl.drag.drag_viewport) {
+        double f_scale = window ? _glfwWaylandWindowScale(window) : 1.0;
+        int logical_width = (int)(thumbnail->width / f_scale);
+        int logical_height = (int)(thumbnail->height / f_scale);
+        wp_viewport_set_destination(_glfw.wl.drag.drag_viewport, logical_width, logical_height);
+    } else {
+        int scale = window ? _glfwWaylandIntegerWindowScale(window) : 1;
+        wl_surface_set_buffer_scale(_glfw.wl.drag.drag_icon, scale);
+    }
+    wl_surface_attach(_glfw.wl.drag.drag_icon, icon_buffer, 0, 0);
+    wl_surface_damage(_glfw.wl.drag.drag_icon, 0, 0, INT32_MAX, INT32_MAX);
+    wl_surface_commit(_glfw.wl.drag.drag_icon);
+    wl_buffer_destroy(icon_buffer);
+    return 0;
+}
+
+int
 _glfwPlatformDragDataReady(const char *mime_type) {
     for (size_t i = 0; i < _glfw.wl.drag.count; i++) {
         if (strcmp(dr.mime_type, mime_type) == 0) {
@@ -3200,9 +3258,9 @@ _glfwPlatformDragDataReady(const char *mime_type) {
 }
 
 static void
-drag_source_send(void *data, struct wl_data_source *source, const char *mime_type, int fd) {
+drag_source_send(void *data UNUSED, struct wl_data_source *source UNUSED, const char *mime_type, int fd) {
     _GLFWwindow *window = _glfwWindowForId(_glfw.drag.window_id);
-#define abort() safe_close(fd); drag_source_cancelled(data, source);  return
+#define abort() safe_close(fd); cancel_drag(GLFW_DRAG_CANCELLED);  return
     if (!window) { abort(); }
     mime_type = _glfw_strdup(mime_type);
     if (!mime_type) { abort(); }
@@ -3224,7 +3282,7 @@ drag_source_target(void *data UNUSED, struct wl_data_source *source UNUSED, cons
     if (window) {
         GLFWDragEvent ev = {.type=GLFW_DRAG_ACCEPTED, .mime_type=mime_type};
         _glfwInputDragSourceRequest(window, &ev);
-    } else drag_source_cancelled(data, source);
+    } else cancel_drag(GLFW_DRAG_CANCELLED);
 }
 
 static void
@@ -3240,7 +3298,7 @@ drag_source_action(void *data UNUSED, struct wl_data_source *source UNUSED, uint
         _glfw.wl.drag.action = op;
         GLFWDragEvent ev = {.type=GLFW_DRAG_ACTION_CHANGED, .action=op};
         _glfwInputDragSourceRequest(window, &ev);
-    } else drag_source_cancelled(data, source);
+    } else cancel_drag(GLFW_DRAG_CANCELLED);
 }
 
 static void
@@ -3249,7 +3307,7 @@ drag_source_dnd_drop_performed(void *data UNUSED, struct wl_data_source *source 
     if (window) {
         GLFWDragEvent ev = {.type=GLFW_DRAG_DROPPED};
         _glfwInputDragSourceRequest(window, &ev);
-    } else drag_source_cancelled(data, source);
+    } else cancel_drag(GLFW_DRAG_CANCELLED);
 }
 
 static void
@@ -3261,6 +3319,16 @@ drag_source_dnd_finished(void *data UNUSED, struct wl_data_source *source UNUSED
     }
     _glfwFreeDragSourceData();
 }
+
+static void
+drag_source_cancelled(void *data UNUSED, struct wl_data_source *source UNUSED) {
+    // Uber competent Wayland people contravene their own spec and make it
+    // impossible to distinguish between drag cancelled and dropped but not
+    // accepted. https://gitlab.freedesktop.org/wayland/wayland/-/issues/140
+    // so we assume this is a drop unless we are in top-level mode. Sigh.
+    cancel_drag(_glfw.wl.drag.toplevel_xdg_toplevel ? GLFW_DRAG_CANCELLED : GLFW_DRAG_DROPPED);
+}
+
 
 static const struct wl_data_source_listener drag_source_listener = {
     .send = drag_source_send,
@@ -3274,6 +3342,10 @@ static const struct wl_data_source_listener drag_source_listener = {
 void
 _glfwPlatformFreeDragSourceData(void) {
     if (_glfw.wl.drag.drag_viewport) wp_viewport_destroy(_glfw.wl.drag.drag_viewport);
+    if (_glfw.wl.drag.toplevel_drag) xdg_toplevel_drag_v1_destroy(_glfw.wl.drag.toplevel_drag);
+    if (_glfw.wl.drag.toplevel_buffer) wl_buffer_destroy(_glfw.wl.drag.toplevel_buffer);
+    if (_glfw.wl.drag.toplevel_xdg_toplevel) xdg_toplevel_destroy(_glfw.wl.drag.toplevel_xdg_toplevel);
+    if (_glfw.wl.drag.toplevel_xdg_surface) xdg_surface_destroy(_glfw.wl.drag.toplevel_xdg_surface);
     if (_glfw.wl.drag.drag_icon) wl_surface_destroy(_glfw.wl.drag.drag_icon);
     if (_glfw.wl.drag.source) wl_data_source_destroy(_glfw.wl.drag.source);
     if (_glfw.wl.drag.data_requests) {
@@ -3322,31 +3394,48 @@ _glfwPlatformStartDrag(_GLFWwindow* window, const GLFWimage* thumbnail) {
 
     // Set up the drag icon surface if thumbnail is provided
     if (thumbnail && thumbnail->pixels) {
-        struct wl_buffer* icon_buffer = NULL;
         _glfw.wl.drag.drag_icon = wl_compositor_create_surface(_glfw.wl.compositor);
-        if (_glfw.wl.drag.drag_icon) {
-            icon_buffer = createShmBuffer(thumbnail, false, true);
-            if (icon_buffer) {
-                if (_glfw.wl.wp_viewporter) {
-                    double f_scale = _glfwWaylandWindowScale(window);
-                    int logical_width = (int)(thumbnail->width / f_scale);
-                    int logical_height = (int)(thumbnail->height / f_scale);
-                    _glfw.wl.drag.drag_viewport = wp_viewporter_get_viewport(
-                            _glfw.wl.wp_viewporter, _glfw.wl.drag.drag_icon);
-                    wp_viewport_set_destination(_glfw.wl.drag.drag_viewport, logical_width, logical_height);
-                } else {
-                    int scale = _glfwWaylandIntegerWindowScale(window);
-                    wl_surface_set_buffer_scale(_glfw.wl.drag.drag_icon, scale);
-                }
-                wl_surface_attach(_glfw.wl.drag.drag_icon, icon_buffer, 0, 0);
-                wl_surface_commit(_glfw.wl.drag.drag_icon);
-                wl_buffer_destroy(icon_buffer);
-            }
+        if (!_glfw.wl.drag.drag_icon) return ENOMEM;
+        struct wl_buffer* icon_buffer = NULL;
+        icon_buffer = createShmBuffer(thumbnail, false, true);
+        if (!icon_buffer) return ENOMEM;
+        if (_glfw.wl.wp_viewporter) {
+            double f_scale = _glfwWaylandWindowScale(window);
+            int logical_width = (int)(thumbnail->width / f_scale);
+            int logical_height = (int)(thumbnail->height / f_scale);
+            _glfw.wl.drag.drag_viewport = wp_viewporter_get_viewport(
+                    _glfw.wl.wp_viewporter, _glfw.wl.drag.drag_icon);
+            wp_viewport_set_destination(_glfw.wl.drag.drag_viewport, logical_width, logical_height);
+        } else {
+            int scale = _glfwWaylandIntegerWindowScale(window);
+            wl_surface_set_buffer_scale(_glfw.wl.drag.drag_icon, scale);
         }
+
+        if (_glfw.drag.needs_toplevel_on_wayland && _glfw.wl.xdg_toplevel_drag_manager_v1) {
+            _glfw.wl.drag.toplevel_drag = xdg_toplevel_drag_manager_v1_get_xdg_toplevel_drag(
+                _glfw.wl.xdg_toplevel_drag_manager_v1, _glfw.wl.drag.source);
+            if (!_glfw.wl.drag.toplevel_drag) return ENOMEM;
+            _glfw.wl.drag.toplevel_xdg_surface = xdg_wm_base_get_xdg_surface(
+                        _glfw.wl.wmBase, _glfw.wl.drag.drag_icon);
+            if (!_glfw.wl.drag.toplevel_xdg_surface) return ENOMEM;
+            xdg_surface_add_listener(_glfw.wl.drag.toplevel_xdg_surface,
+                                        &drag_toplevel_xdg_surface_listener, NULL);
+            _glfw.wl.drag.toplevel_xdg_toplevel = xdg_surface_get_toplevel(
+                    _glfw.wl.drag.toplevel_xdg_surface);
+            if (!_glfw.wl.drag.toplevel_xdg_toplevel) return ENOMEM;
+            xdg_toplevel_add_listener(_glfw.wl.drag.toplevel_xdg_toplevel, &drag_toplevel_listener, NULL);
+            _glfw.wl.drag.toplevel_buffer = icon_buffer; icon_buffer = NULL;
+            xdg_toplevel_drag_v1_attach(_glfw.wl.drag.toplevel_drag,
+                                    _glfw.wl.drag.toplevel_xdg_toplevel, 0, 0);
+        } else wl_surface_attach(_glfw.wl.drag.drag_icon, icon_buffer, 0, 0);
+        wl_surface_commit(_glfw.wl.drag.drag_icon);
+        if (icon_buffer) wl_buffer_destroy(icon_buffer);
     }
     // Start the drag operation
-    wl_data_device_start_drag(_glfw.wl.dataDevice, _glfw.wl.drag.source, window->wl.surface, _glfw.wl.drag.drag_icon,
-                              _glfw.wl.pointer_serial);
+    wl_data_device_start_drag(
+        _glfw.wl.dataDevice, _glfw.wl.drag.source, window->wl.surface,
+        _glfw.wl.xdg_toplevel_drag_manager_v1 ? NULL : _glfw.wl.drag.drag_icon,
+        _glfw.wl.pointer_serial);
 
     return 0;
 }

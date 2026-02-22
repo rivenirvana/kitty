@@ -1161,11 +1161,12 @@ _glfwFreeDragSourceData(void) {
 }
 
 GLFWAPI int
-glfwStartDrag(GLFWwindow* handle, const GLFWDragSourceItem *items, size_t item_count, const GLFWimage* thumbnail, int operations) {
+glfwStartDrag(GLFWwindow* handle, const GLFWDragSourceItem *items, size_t item_count, const GLFWimage* thumbnail, int operations, bool needs_toplevel_on_wayland) {
     _GLFWwindow* window = (_GLFWwindow*) handle;
     assert(window != NULL);
     _GLFW_REQUIRE_INIT_OR_RETURN(EINVAL);
     if (operations == -1) return _glfwPlatformDragDataReady(items[0].mime_type);
+    if (operations == -2) return _glfwPlatformChangeDragImage(thumbnail);
     _glfwFreeDragSourceData();
     _glfw.drag.instance_id++;
     if (!items || !item_count) return 0;
@@ -1187,6 +1188,7 @@ glfwStartDrag(GLFWwindow* handle, const GLFWDragSourceItem *items, size_t item_c
     }
     _glfw.drag.window_id = window->id;
     _glfw.drag.operations = operations;
+    _glfw.drag.needs_toplevel_on_wayland = needs_toplevel_on_wayland;
     int ans = _glfwPlatformStartDrag(window, thumbnail);
     if (ans != 0) _glfwFreeDragSourceData();
     return ans;

@@ -1195,13 +1195,13 @@ class TabManager:  # {{{
     @property
     def tab_bar_should_be_visible(self) -> bool:
         if self.tab_being_dropped is not None:
-            return True
+            return True  # keep tab bar visible in the dest
         count = get_options().tab_bar_min_tabs
         if count < 1:
             return True
         tab_id, drag_started = get_tab_being_dragged()[:2]
         if drag_started and self.tab_for_id(tab_id) is not None:
-            count += 1
+            return True  # keep tab bar visible in the source
         for t in self.tabs_to_be_shown_in_tab_bar:
             count -= 1
             if count < 1:
@@ -1564,13 +1564,18 @@ class TabManager:  # {{{
             self.tabs[pos] = id_map[tab_id]
         reorder_tabs(self.os_window_id, *(t.id for t in self.tabs))
 
+    @update_tab_bar_visibility
     def on_tab_drop_move(self, tab_id: int = 0, is_dest: bool = False, x: int = 0, y: int = 0) -> None:
         if not is_dest:
             if self.tab_being_dropped:
                 self.tab_being_dropped = None
                 self.layout_tab_bar()
             return
-        all_tabs = [t.tab_id for t in self.tab_bar.last_laid_out_tabs]
+        if self.tab_bar_should_be_visible:
+            all_tabs = [t.tab_id for t in self.tab_bar.last_laid_out_tabs]
+        else:
+            all_tabs = [t.tab_id for t in self.tab_bar_data]
+        force_update = False
         if self.tab_being_dropped is None:
             tab = get_boss().tab_for_id(tab_id)
             if tab is None:
@@ -1581,7 +1586,8 @@ class TabManager:  # {{{
             _, _, start_x, _ = get_tab_being_dragged()
             self.tab_being_dropped = TabBeingDropped(data=tab_data, tab_ids=all_tabs, last_drop_move_x=int(start_x))
             mouse_moved_left = False
-        if x == self.tab_being_dropped.last_drop_move_x:
+            force_update = True
+        if x == self.tab_being_dropped.last_drop_move_x and not force_update:
             return
         mouse_moved_left = x < self.tab_being_dropped.last_drop_move_x
         old_tab_ids = self.tab_being_dropped.tab_ids
@@ -1598,15 +1604,17 @@ class TabManager:  # {{{
             new_tab_ids = list(old_tab_ids)
             new_tab_ids[idx_under_mouse], new_tab_ids[old_idx_under_mouse] = new_tab_ids[old_idx_under_mouse], new_tab_ids[idx_under_mouse]
         self.tab_being_dropped = self.tab_being_dropped._replace(last_drop_move_x=x, tab_ids=new_tab_ids)
-        if self.tab_being_dropped.tab_ids != old_tab_ids:
+        if force_update or self.tab_being_dropped.tab_ids != old_tab_ids:
             self.layout_tab_bar()
 
-    def on_tab_drop(self, x: int, y: int) -> None:
+    @update_tab_bar_visibility
+    def on_tab_drop(self, x: int, y: int, bypass_move: bool = False) -> None:
         if (td := self.tab_being_dropped) is None:
             return
         if (tab := get_boss().tab_for_id(td.data.tab_id)) is None:
             return
-        self.on_tab_drop_move(td.data.tab_id, True, x, y)
+        if not bypass_move:
+            self.on_tab_drop_move(td.data.tab_id, True, x, y)
         if (td := self.tab_being_dropped) is None:
             return
         self.tab_being_dropped = None
@@ -1647,10 +1655,11 @@ class TabManager:  # {{{
                     bg = color_as_int(opts.inactive_tab_background)
                 title_pixels = draw_single_line_of_text(self.os_window_id, title, 0xff000000 | fg, 0xff000000 | bg, width)
                 title_height = len(title_pixels) // (width * 4)
+                thumbnails = ((title_pixels, width, title_height), (title_pixels + pixels, width, title_height + height))
                 drag_data = {
                     f'application/net.kovidgoyal.kitty-tab-{os.getpid()}': str(tab.id).encode(),
                 }
-                start_drag_with_data(self.os_window_id, drag_data, title_pixels + pixels, width, title_height + height)
+                start_drag_with_data(self.os_window_id, drag_data, thumbnails)
                 break
         else:
             set_tab_being_dragged()

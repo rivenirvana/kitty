@@ -1391,6 +1391,7 @@ typedef enum { GLFW_DROP_ENTER, GLFW_DROP_MOVE, GLFW_DROP_LEAVE, GLFW_DROP_DROP,
  *  @ingroup input
  */
 typedef enum {
+    GLFW_DRAG_OPERATION_NONE = 0,  // no operation, drop was not accepted
     /*! Move the dragged data to the destination. */
     GLFW_DRAG_OPERATION_MOVE = 1,
     /*! Copy the dragged data to the destination. */
@@ -4981,8 +4982,9 @@ GLFWAPI void glfwEndDrop(GLFWwindow *window, GLFWDragOperationType op);
 GLFWAPI GLFWdragsourcefun glfwSetDragSourceCallback(GLFWwindow* window, GLFWdragsourcefun callback);
 
 // Start a drag. If called with operations == -1 indicates that previously
-// requested data via GLFW_DRAG_DATA_REQUEST is ready.
-GLFWAPI int glfwStartDrag(GLFWwindow* window, const GLFWDragSourceItem *items, size_t mime_count, const GLFWimage* thumbnail, int operations);
+// requested data via GLFW_DRAG_DATA_REQUEST is ready. operations == -2 means
+// that the drag image is changed.
+GLFWAPI int glfwStartDrag(GLFWwindow* window, const GLFWDragSourceItem *items, size_t mime_count, const GLFWimage* thumbnail, int operations, bool needs_toplevel_on_wayland);
 
 /*! @brief Returns whether the specified joystick is present.
  *

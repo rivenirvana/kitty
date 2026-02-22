@@ -1119,6 +1119,7 @@ typedef enum { GLFW_DROP_ENTER, GLFW_DROP_MOVE, GLFW_DROP_LEAVE, GLFW_DROP_DROP,
  *  @ingroup input
  */
 typedef enum {
+    GLFW_DRAG_OPERATION_NONE = 0,  // no operation, drop was not accepted
     /*! Move the dragged data to the destination. */
     GLFW_DRAG_OPERATION_MOVE = 1,
     /*! Copy the dragged data to the destination. */
@@ -2301,7 +2302,7 @@ typedef GLFWdragsourcefun (*glfwSetDragSourceCallback_func)(GLFWwindow*, GLFWdra
 GFW_EXTERN glfwSetDragSourceCallback_func glfwSetDragSourceCallback_impl;
 #define glfwSetDragSourceCallback glfwSetDragSourceCallback_impl
 
-typedef int (*glfwStartDrag_func)(GLFWwindow*, const GLFWDragSourceItem*, size_t, const GLFWimage*, int);
+typedef int (*glfwStartDrag_func)(GLFWwindow*, const GLFWDragSourceItem*, size_t, const GLFWimage*, int, bool);
 GFW_EXTERN glfwStartDrag_func glfwStartDrag_impl;
 #define glfwStartDrag glfwStartDrag_impl
 

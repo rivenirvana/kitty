@@ -73,6 +73,7 @@ from .fast_data_types import (
     apply_options_update,
     background_opacity_of,
     change_background_opacity,
+    change_drag_thumbnail,
     cocoa_hide_app,
     cocoa_hide_other_apps,
     cocoa_minimize_os_window,
@@ -1892,14 +1893,19 @@ class Boss:
         if tm is not None:
             tm.update_tab_bar_data()
 
-    def on_drop_move(self, os_window_id: int, x: int, y: int, from_self: bool) -> None:
+    def on_drop_move(self, os_window_id: int, x: int, y: int, from_self: bool, is_leave: bool) -> None:
         if (tm := self.os_window_map.get(os_window_id)) is None:
             return
         if from_self:
             tab_id, drag_started = get_tab_being_dragged()[:2]
-            if drag_started:
+            if tab_id and drag_started and (tab := self.tab_for_id(tab_id)):
+                central, tab_bar = viewport_for_window(os_window_id)[:2]
+                in_tab_bar = tab_bar.left <= x < tab_bar.right and tab_bar.top <= y < tab_bar.bottom
+                detach = not in_tab_bar or tab.os_window_id != tm.os_window_id or is_leave
+                change_drag_thumbnail(tab.os_window_id, 1 if detach else 0)
                 for q in self.all_tab_managers:
-                    q.on_tab_drop_move(tab_id, q is tm, x, y)
+                    is_dest = q is tm and (in_tab_bar or os_window_id != tab.os_window_id) and not is_leave
+                    q.on_tab_drop_move(tab_id, is_dest, x, y)
 
     def on_drop(self, os_window_id: int, drop: dict[str, bytes] | int, from_self: bool, x: int, y: int) -> None:
         if isinstance(drop, int):
@@ -1912,8 +1918,13 @@ class Boss:
             return
         if (tm := self.os_window_map.get(os_window_id)) is None:
             return
-        if f'application/net.kovidgoyal.kitty-tab-{os.getpid()}' in drop:
-            tm.on_tab_drop(x, y)
+        if (tidb := drop.get(f'application/net.kovidgoyal.kitty-tab-{os.getpid()}')) and (tab := self.tab_for_id(int(tidb))):
+            central, tab_bar = viewport_for_window(os_window_id)[:2]
+            in_tab_bar = tab_bar.left <= x < tab_bar.right and tab_bar.top <= y < tab_bar.bottom
+            if in_tab_bar or tab.os_window_id != tm.os_window_id:
+                tm.on_tab_drop(x, y)
+            else:
+                self._move_tab_to(tab)
             set_tab_being_dragged()
             for tm in self.all_tab_managers:
                 tm.on_tab_drop_move()
@@ -1929,21 +1940,26 @@ class Boss:
                     if g.left <= x < g.right and g.top <= y < g.bottom:
                         window.on_drop(drop)
                         break
-        elif tab_bar.left <= x < tab_bar.right and tab_bar.top <= y < central.bottom:
+        elif tab_bar.left <= x < tab_bar.right and tab_bar.top <= y < tab_bar.bottom:
             if (tab_id := tm.tab_bar.tab_id_at(x)) and (tab := self.tab_for_id(tab_id)) and (w := tab.active_window):
                 w.on_drop(drop)
 
     def on_drag_source_finished(
-        self, was_dropped: bool, was_canceled: bool, accepted_mime_type: str, action: int, data: dict[str, bytes] | None
+        self, was_dropped: bool, was_canceled: bool, accepted_mime_type: str, action: int, data: dict[str, bytes] | None,
+        needs_toplevel_on_wayland: bool
     ) -> None:
-        if data and (tidb := data.get(f'application/net.kovidgoyal.kitty-tab-{os.getpid()}')):
+        if (tab_id := int((data or {}).get(f'application/net.kovidgoyal.kitty-tab-{os.getpid()}', b'0').decode())
+        ) and get_tab_being_dragged()[0] == tab_id and (tab := self.tab_for_id(tab_id)):
+            if needs_toplevel_on_wayland:
+                for tm in self.all_tab_managers:
+                    if tm.tab_being_dropped:
+                        tm.on_tab_drop(0, 0, bypass_move=True)
+                        return
             set_tab_being_dragged()
             for tm in self.all_tab_managers:
                 tm.on_tab_drop_move()
-            if not was_dropped:  # detach tab into new OS Window
-                tab_id = int(tidb.decode())
-                if (tab := self.tab_for_id(tab_id)):
-                    self._move_tab_to(tab)
+            if was_dropped:  # detach tab into new OS Window
+                self._move_tab_to(tab)
 
     @ac('win', '''
         Focus the nth OS window if positive or the previously active OS windows if negative. When the number is larger
@@ -3351,7 +3367,7 @@ class Boss:
             with open(logo_png_file, 'rb') as f:
                 rgba, width, height = load_png_data(f.read())
             drag_data = {'text/plain': b'This is a test drag of some basic text with the kitty logo as the drag icon.'}
-            start_drag_with_data(wid, drag_data, rgba, width, height)
+            start_drag_with_data(wid, drag_data, ((rgba, width, height),))
 
     def launch_urls(self, *urls: str, no_replace_window: bool = False) -> None:
         from .launch import force_window_launch

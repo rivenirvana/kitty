@@ -28,6 +28,7 @@ from .fast_data_types import (
     buffer_keys_in_window,
     current_focused_os_window_id,
     detach_window,
+    draw_single_line_of_text,
     get_boss,
     get_click_interval,
     get_options,
@@ -57,7 +58,7 @@ from .progress import ProgressState
 from .tab_bar import TabBar, TabBarData, apply_title_template
 from .types import ac
 from .typing_compat import EdgeLiteral, SessionTab, SessionType, TypedDict
-from .utils import cmdline_for_hold, log_error, platform_window_id, resolved_shell, shlex_split, which
+from .utils import cmdline_for_hold, color_as_int, log_error, platform_window_id, resolved_shell, shlex_split, which
 from .window import CwdRequest, Watchers, Window, WindowCreationSpec, WindowDict, global_watchers
 from .window_list import WindowList
 
@@ -1089,9 +1090,6 @@ class Tab:  # {{{
 # }}}
 
 
-ignore_left_button_release: bool = False
-
-
 class TabBeingDropped(NamedTuple):
     data: TabBarData
     tab_ids: Sequence[int] = ()
@@ -1640,11 +1638,19 @@ class TabManager:  # {{{
                 title = re.sub(r'\x1b\[.+?[a-zA-Z]', '', title).strip()  # strip CSI codes ]
                 title = replace_c0_codes_except_nl_space_tab(title.encode()).decode()
                 title = re.sub(r'\n', ' ', title)
-                # TODO: Add the title to the drag icon
+                opts = get_options()
+                if td.is_active:
+                    fg = color_as_int(opts.active_tab_foreground)
+                    bg = color_as_int(opts.active_tab_background)
+                else:
+                    fg = color_as_int(opts.inactive_tab_foreground)
+                    bg = color_as_int(opts.inactive_tab_background)
+                title_pixels = draw_single_line_of_text(self.os_window_id, title, 0xff000000 | fg, 0xff000000 | bg, width)
+                title_height = len(title_pixels) // (width * 4)
                 drag_data = {
                     f'application/net.kovidgoyal.kitty-tab-{os.getpid()}': str(tab.id).encode(),
                 }
-                start_drag_with_data(self.os_window_id, drag_data, pixels, width, height)
+                start_drag_with_data(self.os_window_id, drag_data, title_pixels + pixels, width, title_height + height)
                 break
         else:
             set_tab_being_dragged()
@@ -1653,7 +1659,8 @@ class TabManager:  # {{{
         if button == -1:  # motion
             dragged_tab_id, drag_started, start_x, start_y = get_tab_being_dragged()
             if dragged_tab_id and self.tab_for_id(dragged_tab_id) is not None and not drag_started:
-                if math.sqrt((x-start_x)**2 + (y-start_y)**2) > 5:
+                threshold = get_options().tab_bar_drag_threshold
+                if threshold and math.sqrt((x-start_x)**2 + (y-start_y)**2) > threshold:
                     set_tab_being_dragged(dragged_tab_id, True, start_x, start_y)
                     request_callback_with_thumbnail("start_tab_drag", self.os_window_id)
             return
@@ -1675,14 +1682,13 @@ class TabManager:  # {{{
                     return
         else:
             if button == GLFW_MOUSE_BUTTON_LEFT:
-                global ignore_left_button_release
                 if action == GLFW_PRESS:
                     set_tab_being_dragged(tab.id, False, x, y)
-                    ignore_left_button_release = True
                 else:
-                    ignore, ignore_left_button_release = ignore_left_button_release, False
-                    if not ignore:
+                    drag_started = get_tab_being_dragged()[1]
+                    if not drag_started:
                         self.set_active_tab(tab)
+                        set_tab_being_dragged()
             elif button == GLFW_MOUSE_BUTTON_MIDDLE:
                 if action == GLFW_RELEASE and self.recent_mouse_events:
                     p = self.recent_mouse_events[-1]

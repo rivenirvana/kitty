@@ -235,6 +235,14 @@ Detailed list of changes
 - macOS: A new option :opt:`macos_dock_badge_on_bell` to show a badge on the
   kitty dock icon when a bell occurs (:pull:`9529`)
 
+- macOS: Workaround for yet another Tahoe bug causing rendering to fail
+  (:pull:`9520`)
+
+- URL detection: Allow trailing asterisks in URLs (:iss:`9543`)
+
+- Wayland: Add support for :code:`titlebar-only` in :opt:`hide_window_decorations`
+  to hide the titlebar while keeping shadows for window resizing. (:pull:`9486`)
+
 
 0.45.0 [2025-12-24]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

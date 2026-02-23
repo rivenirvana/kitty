@@ -473,6 +473,9 @@ load_glfw(const char* path) {
     *(void **) (&glfwCocoaRequestRenderFrame_impl) = dlsym(handle, "glfwCocoaRequestRenderFrame");
     if (glfwCocoaRequestRenderFrame_impl == NULL) dlerror(); // clear error indicator
 
+    *(void **) (&glfwCocoaRecreateGLDrawable_impl) = dlsym(handle, "glfwCocoaRecreateGLDrawable");
+    if (glfwCocoaRecreateGLDrawable_impl == NULL) dlerror(); // clear error indicator
+
     *(void **) (&glfwCocoaSetWindowResizeCallback_impl) = dlsym(handle, "glfwCocoaSetWindowResizeCallback");
     if (glfwCocoaSetWindowResizeCallback_impl == NULL) dlerror(); // clear error indicator
 
@@ -514,6 +517,9 @@ load_glfw(const char* path) {
 
     *(void **) (&glfwWaylandSetTitlebarColor_impl) = dlsym(handle, "glfwWaylandSetTitlebarColor");
     if (glfwWaylandSetTitlebarColor_impl == NULL) dlerror(); // clear error indicator
+
+    *(void **) (&glfwWaylandSetTitlebarHidden_impl) = dlsym(handle, "glfwWaylandSetTitlebarHidden");
+    if (glfwWaylandSetTitlebarHidden_impl == NULL) dlerror(); // clear error indicator
 
     *(void **) (&glfwWaylandRedrawCSDWindowTitle_impl) = dlsym(handle, "glfwWaylandRedrawCSDWindowTitle");
     if (glfwWaylandRedrawCSDWindowTitle_impl == NULL) dlerror(); // clear error indicator

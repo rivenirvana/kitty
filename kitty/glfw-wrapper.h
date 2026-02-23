@@ -2442,6 +2442,10 @@ typedef void (*glfwCocoaRequestRenderFrame_func)(GLFWwindow*, GLFWcocoarenderfra
 GFW_EXTERN glfwCocoaRequestRenderFrame_func glfwCocoaRequestRenderFrame_impl;
 #define glfwCocoaRequestRenderFrame glfwCocoaRequestRenderFrame_impl
 
+typedef bool (*glfwCocoaRecreateGLDrawable_func)(GLFWwindow*);
+GFW_EXTERN glfwCocoaRecreateGLDrawable_func glfwCocoaRecreateGLDrawable_impl;
+#define glfwCocoaRecreateGLDrawable glfwCocoaRecreateGLDrawable_impl
+
 typedef GLFWcocoarenderframefun (*glfwCocoaSetWindowResizeCallback_func)(GLFWwindow*, GLFWcocoarenderframefun);
 GFW_EXTERN glfwCocoaSetWindowResizeCallback_func glfwCocoaSetWindowResizeCallback_impl;
 #define glfwCocoaSetWindowResizeCallback glfwCocoaSetWindowResizeCallback_impl
@@ -2497,6 +2501,10 @@ GFW_EXTERN glfwWaylandRunWithActivationToken_func glfwWaylandRunWithActivationTo
 typedef bool (*glfwWaylandSetTitlebarColor_func)(GLFWwindow*, uint32_t, bool);
 GFW_EXTERN glfwWaylandSetTitlebarColor_func glfwWaylandSetTitlebarColor_impl;
 #define glfwWaylandSetTitlebarColor glfwWaylandSetTitlebarColor_impl
+
+typedef void (*glfwWaylandSetTitlebarHidden_func)(GLFWwindow*, bool);
+GFW_EXTERN glfwWaylandSetTitlebarHidden_func glfwWaylandSetTitlebarHidden_impl;
+#define glfwWaylandSetTitlebarHidden glfwWaylandSetTitlebarHidden_impl
 
 typedef void (*glfwWaylandRedrawCSDWindowTitle_func)(GLFWwindow*);
 GFW_EXTERN glfwWaylandRedrawCSDWindowTitle_func glfwWaylandRedrawCSDWindowTitle_impl;

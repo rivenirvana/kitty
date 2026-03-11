@@ -328,6 +328,8 @@ WINDOW_HIDDEN: int
 TEXT_SIZE_CODE: int
 TOP_EDGE: int
 BOTTOM_EDGE: int
+LEFT_EDGE: int
+RIGHT_EDGE: int
 # }}}
 
 
@@ -1030,8 +1032,8 @@ def set_active_window(os_window_id: int, tab_id: int, window_id: int) -> None:
     pass
 
 
-def ring_bell(os_window_id: int = 0) -> None:
-    pass
+def ring_bell(os_window_id: int = 0) -> None: ...
+def request_attention(os_window_id: int) -> None: ...
 
 
 def concat_cells(cell_width: int, cell_height: int, is_32_bit: bool, cells: Tuple[bytes, ...], bgcolor: int = 0) -> bytes:
@@ -1387,6 +1389,9 @@ class Screen:
     def insert_characters(self, num: int) -> None:
         pass
 
+    def delete_characters(self, num: int) -> None: ...
+    def erase_characters(self, num: int) -> None: ...
+
     def line_edge_colors(self) -> Tuple[int, int]:
         pass
 
@@ -1398,6 +1403,13 @@ class Screen:
 
 def set_tab_bar_render_data(
     os_window_id: int, screen: Screen, left: int, top: int, right: int, bottom: int
+) -> None:
+    pass
+
+
+def set_window_title_bar_render_data(
+    os_window_id: int, tab_id: int, window_id: int, screen: Screen,
+    left: int, top: int, right: int, bottom: int
 ) -> None:
     pass
 

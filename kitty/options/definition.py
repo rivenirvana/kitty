@@ -983,6 +983,14 @@ boundary, use :code:`move-end` instead of :code:`extend`.
 '''
     )
 
+mma('Extend the current selection with shift',
+    'extend_selection_shift shift+left press ungrabbed mouse_selection extend',
+    long_text='''
+If you want only the end of the selection to be moved instead of the nearest
+boundary, use :code:`move-end` instead of :code:`extend`.
+'''
+    )
+
 mma('Paste from the primary selection even when grabbed',
     'paste_selection_grabbed shift+middle release ungrabbed,grabbed paste_selection',
     )
@@ -992,7 +1000,7 @@ mma('Discard press event for middle click paste',
     )
 
 mma('Start selecting text even when grabbed',
-    'start_simple_selection_grabbed shift+left press ungrabbed,grabbed mouse_selection normal',
+    'start_simple_selection_grabbed shift+left press grabbed mouse_selection normal',
     )
 
 mma('Start selecting text in a rectangle even when grabbed',
@@ -1457,6 +1465,91 @@ by adding :code:`count-background` to the setting, for example: :code:`-1 count-
 Note that if you want confirmation when closing individual windows,
 you can map the :ac:`close_window_with_confirmation` action.
 ''')
+
+opt('window_drag_tolerance', '2', option_type='float', ctype='double', long_text='''
+Control dragging window borders to resize kitty windows. This is the tolerance in pts
+for the region around window borders where pressing the left mouse button
+will start the dragging of window borders. Use a large negative value such as -200 to disable
+dragging of borders. Note that because kitty uses layouts, dragging borders does not
+actually resize the window itself, but instead, the layout row/column/slot, which can result
+in multiple windows getting resized.
+''')
+
+opt('window_title_bar', 'top',
+    choices=('top', 'bottom'),
+    long_text='''
+Control the position of the window title bar relative to the window content.
+Use :opt:`window_title_bar_min_windows` to control when title bars are shown.
+Use :opt:`window_title_template` to format the displayed window title.
+'''
+    )
+
+opt('window_title_bar_min_windows', '0',
+    option_type='positive_int',
+    long_text='''
+The minimum number of visible windows in a tab before window title bars
+are shown. A value of :code:`0` means never show. :code:`1` means always
+show. :code:`2` or more means show only when at least that many windows
+are visible. Similar to :opt:`tab_bar_min_tabs` for the tab bar.
+'''
+)
+
+opt('window_title_template', '"{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.window}{progress_percent}{title}"',
+    option_type='tab_title_template',
+    long_text='''
+A template to render the window title bar text. Uses the same template syntax as
+:opt:`tab_title_template`. Available variables include: :code:`{title}`,
+:code:`{bell_symbol}`, :code:`{activity_symbol}`, :code:`{progress_percent}`,
+:code:`{custom}`, :code:`{fmt}`, :code:`{is_active}`.
+You can also provide a custom :code:`draw_window_title(data)` function in
+:file:`window_title_bar.py` in the kitty config directory, exposed as :code:`{custom}`.
+'''
+    )
+
+opt('active_window_title_template', 'none',
+    option_type='tab_title_template',
+    long_text='''
+Template to use for the active window title bar. If not set (the value
+:code:`none`), the :opt:`window_title_template` is used.
+'''
+    )
+
+opt('window_title_bar_active_foreground', 'none',
+    option_type='to_color_or_none', ctype='color_or_none_as_int',
+    long_text='''
+Foreground color for the active window title bar. Defaults to
+the corresponding tab bar color (:code:`active_tab_foreground`) when set to :code:`none`.
+'''
+    )
+
+opt('window_title_bar_active_background', 'none',
+    option_type='to_color_or_none', ctype='color_or_none_as_int',
+    long_text='''
+Background color for the active window title bar. Defaults to
+the corresponding tab bar color (:code:`active_tab_background`) when set to :code:`none`.
+'''
+    )
+
+opt('window_title_bar_inactive_foreground', 'none',
+    option_type='to_color_or_none', ctype='color_or_none_as_int',
+    long_text='''
+Foreground color for inactive window title bars. Defaults to
+the corresponding tab bar color (:code:`inactive_tab_foreground`) when set to :code:`none`.
+'''
+    )
+
+opt('window_title_bar_inactive_background', 'none',
+    option_type='to_color_or_none', ctype='color_or_none_as_int',
+    long_text='''
+Background color for inactive window title bars. Defaults to
+the corresponding tab bar color (:code:`inactive_tab_background`) when set to :code:`none`.
+'''
+    )
+
+opt('window_title_bar_align', 'center',
+    choices=('left', 'center', 'right'),
+    long_text='Horizontal alignment of the text in window title bars.'
+    )
 egr()  # }}}
 
 
@@ -3827,8 +3920,9 @@ Some quick examples to illustrate common tasks::
     # multi-key shortcuts
     map ctrl+x>ctrl+y>z action
 
-The full list of actions that can be mapped to key presses is available
-:doc:`here </actions>`.
+You can browse and trigger these actions by pressing :sc:`command_palette` to
+run the command palette. The full list of actions that can be mapped to
+key presses is available :doc:`here </actions>`.
 ''')
 
 opt('kitty_mod', 'ctrl+shift',
@@ -3846,6 +3940,21 @@ Remove all shortcut definitions up to this point. Useful, for instance, to
 remove the default shortcuts.
 '''
     )
+
+opt('map_timeout', '0.0', option_type='positive_float', long_text='''
+The default timeout (in seconds) for multi-key mappings and modal keyboard modes.
+If you press the first key(s) of a multi-key mapping and don't press the next
+key within this timeout, the mapping is cancelled and the mode is exited. A value
+of zero disables the timeout. This can be overridden for specific modes using the
+:code:`--timeout` option when creating a keyboard mode with :code:`--new-mode`.
+For example::
+
+    # 2 second timeout for all mappings
+    map_timeout 2.0
+
+    # This mode will have a 5 second timeout (overrides the global 2 second timeout)
+    map --new-mode resize --timeout 5.0 kitty_mod+r
+''')
 
 opt('+action_alias', 'launch_tab launch --type=tab --cwd=current',
     option_type='action_alias',
@@ -4507,6 +4616,9 @@ agr('shortcuts.misc', 'Miscellaneous')
 
 map('Show documentation',
     'show_kitty_doc kitty_mod+f1 show_kitty_doc overview')
+
+map('Command palette',
+    'command_palette kitty_mod+f3 command_palette')
 
 map('Toggle fullscreen',
     'toggle_fullscreen kitty_mod+f11 toggle_fullscreen',

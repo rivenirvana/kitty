@@ -117,8 +117,11 @@ typedef UInt8 (*PFN_LMGetKbdType)(void);
 #define LMGetKbdType _glfw.ns.tis.GetKbdType
 
 typedef struct _GLFWDropData {
-    const char **mimes;
+    const char **mimes;          // Original MIME list; strings are owned here, never reordered
     size_t mimes_count;
+    const char **copy_mimes;     // Working copy passed to callbacks; pointers into mimes[]
+    size_t copy_mimes_count;     // Accepted count after last callback
+    bool drag_accepted;
     id pasteboard;
     id data_mapping;
     id file_promise_mapping;
@@ -137,8 +140,10 @@ typedef struct _GLFWwindowNS
     bool            retina;
     bool            in_traditional_fullscreen;
     bool            in_fullscreen_transition;
+    bool            suppress_frame_constraints;
     bool            titlebar_hidden;
     unsigned long   pre_full_screen_style_mask;
+    CGRect          pre_traditional_fullscreen_frame;
 
     // Cached window properties to filter out duplicate events
     int             width, height;

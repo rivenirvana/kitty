@@ -474,7 +474,7 @@ cell_metrics(PyObject *s) {
 
 unsigned int
 glyph_id_for_codepoint(const PyObject *s, char_type cp) {
-    return FT_Get_Char_Index(((Face*)s)->face, cp);
+    return s ? FT_Get_Char_Index(((Face*)s)->face, cp) : 0;
 }
 
 typedef enum { NOT_COLORED, CBDT_COLORED, COLR_V0_COLORED, COLR_V1_COLORED } GlyphColorType;
@@ -522,8 +522,7 @@ get_glyph_width(PyObject *s, glyph_index g) {
     if (!load_glyph(self, g, FT_LOAD_DEFAULT)) { PyErr_Print(); return 0; }
 #define M self->face->glyph->metrics
 #define B self->face->glyph->bitmap
-    /* printf("glyph: %u bitmap.width: %d bitmap.rows: %d horiAdvance: %ld horiBearingX: %ld horiBearingY: %ld vertBearingX: %ld vertBearingY: %ld vertAdvance: %ld width: %ld height: %ld\n", */
-    /*         g, B.width, B.rows, M.horiAdvance, M.horiBearingX, M.horiBearingY, M.vertBearingX, M.vertBearingY, M.vertAdvance, M.width, M.height); */
+    // printf("glyph: %u bitmap.width: %d bitmap.rows: %d horiAdvance: %ld horiBearingX: %ld horiBearingY: %ld vertBearingX: %ld vertBearingY: %ld vertAdvance: %ld width: %ld height: %ld\n", g, B.width, B.rows, M.horiAdvance, M.horiBearingX, M.horiBearingY, M.vertBearingX, M.vertBearingY, M.vertAdvance, M.width, M.height);
     return B.width ? (int)B.width : (int)(M.width / 64);
 #undef M
 #undef B

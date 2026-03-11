@@ -9,6 +9,20 @@ To update |kitty|, :doc:`follow the instructions <binary>`.
 Recent major new features
 ---------------------------
 
+Mousing [0.46]
+~~~~~~~~~~~~~~~
+
+kitty already had excellent mouse support, but now it is taking it to the next
+level. The kitty scrollback buffer grew support for :pull:`smooth scrolling <9330>`
+and momentum based scrolling for a natural, smooth and kinetic scrolling experience.
+
+Additionally, you can now :pull:`drag kitty tabs around <9296>` with the mouse
+to re-order them, move them to another kitty OS Window or even detach them into
+their own OS Window.
+
+Finally, a long requested feature, the ability to resize kitty windows (aka
+splits) with the mouse was finally implemented.
+
 Choose files, fast [0.45]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -150,7 +164,7 @@ consumption to do the same tasks.
 Detailed list of changes
 -------------------------------------
 
-0.46.0 [future]
+0.46.0 [2026-03-11]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - Pixel scrolling for the kitty scrollback buffer controlled via :opt:`pixel_scroll` (:pull:`9330`)
@@ -164,6 +178,15 @@ Detailed list of changes
 - Allow dragging tabs in the tab bar to re-order, move to another OS Window or
   detach (:pull:`9296`)
 
+- Allow dragging window borders to resize kitty windows in all the different
+  layouts, controlled by :opt:`window_drag_tolerance` (:pull:`9447`)
+
+- Allow showing :opt:`configurable window titles <window_title_bar>` for individual kitty
+  windows via a window title bar (:pull:`9450`)
+
+- A command palette to browse and trigger all mapped and unmapped actions
+  (:pull:`9545`)
+
 - choose-files kitten: Fix JXL image preview not working (:iss:`9323`)
 
 - Fix tab bar rendering glitches when using :opt:`tab_bar_filter` in some
@@ -174,6 +197,8 @@ Detailed list of changes
 
 - Fix a regression that broke using line numbers with the edit-in-kitty command
   (:pull:`9346`)
+
+- Key maps: Allow specifying a timeout for multi key mappings and keyboard modes (:pull:`9551`)
 
 - macOS: Fix changes to :opt:`macos_titlebar_color` while in full screen not being applied after exiting fullscreen (:iss:`9350`)
 
@@ -245,6 +270,24 @@ Detailed list of changes
 
 - Text sizing protocol: Fix alignment/cropping issues when rendering text with
   a fractional scale (:iss:`9471`)
+
+- macOS: Fix a crash when using :opt:`macos_traditional_fullscreen` with split
+  view (:pull:`9573`)
+
+- macOS: Fix flickering during OS Window resize (:disc:`9582`)
+
+- Cursor trail: Show a cursor trail when switching tabs (:pull:`9588`)
+
+- Make shift+left click extend the current selection instead of starting a new
+  selection when the mouse is not grabbed by the TUI application (:disc:`9608`)
+
+- Allow double clicking on a tab to rename it (:pull:`9609`)
+
+- :ac:`remote_control_script` resolve relative paths with respect to kitty
+  config directory (:iss:`9625`)
+
+- Splits layout: Add new mappable actions to maximize a window in the splits
+  layout (:iss:`9629`)
 
 
 0.45.0 [2025-12-24]

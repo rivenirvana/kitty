@@ -14,6 +14,7 @@ from contextlib import contextmanager, suppress
 from functools import partial
 from gettext import gettext as _
 from gettext import ngettext
+from math import floor
 from time import sleep
 from typing import (
     TYPE_CHECKING,
@@ -23,6 +24,8 @@ from typing import (
     Union,
 )
 from weakref import WeakValueDictionary
+
+from kitty.types import WindowResizeDrag
 
 from .child import cached_process_data, default_env, set_default_env
 from .cli import create_opts, green, parse_args
@@ -54,6 +57,7 @@ from .constants import (
     website_url,
 )
 from .fast_data_types import (
+    BOTTOM_EDGE,
     CLOSE_BEING_CONFIRMED,
     GLFW_FKEY_ESCAPE,
     GLFW_MOD_ALT,
@@ -63,7 +67,10 @@ from .fast_data_types import (
     GLFW_MOUSE_BUTTON_LEFT,
     GLFW_PRESS,
     IMPERATIVE_CLOSE_REQUESTED,
+    LEFT_EDGE,
     NO_CLOSE_REQUESTED,
+    RIGHT_EDGE,
+    TOP_EDGE,
     ChildMonitor,
     Color,
     EllipticCurveKey,
@@ -158,6 +165,7 @@ from .utils import (
     parse_address_spec,
     parse_os_window_state,
     platform_window_id,
+    resolve_custom_file,
     safe_print,
     sanitize_url_for_display_to_user,
     shlex_split,
@@ -381,6 +389,7 @@ class Boss:
         global_shortcuts: dict[str, SingleKey],
         talk_fd: int = -1,
     ):
+        self.drag_resize_of_window = WindowResizeDrag()
         self.atexit = Atexit()
         set_layout_options(opts)
         self.clipboard = Clipboard()
@@ -657,11 +666,15 @@ class Boss:
         startup_session = next(create_sessions(get_options(), special_window=sw, cwd_from=cwd_from))
         startup_session.session_name = ''
         ans = self.add_os_window(startup_session)
-        if cwd_from is not None and (sow := cwd_from.window) and (tm := self.os_window_map.get(ans)) and sow.created_in_session_name:
-            for tab in tm:
-                tab.created_in_session_name = sow.created_in_session_name
-                for w in tab:
-                    w.created_in_session_name = sow.created_in_session_name
+        if cwd_from is not None and (sow := cwd_from.window) and (tm := self.os_window_map.get(ans)):
+            session_name = sow.created_in_session_name
+            if not session_name and (sow_tab := sow.tabref()):
+                session_name = sow_tab.created_in_session_name
+            if session_name:
+                for tab in tm:
+                    tab.created_in_session_name = session_name
+                    for w in tab:
+                        w.created_in_session_name = session_name
         return ans
 
     @ac('win', 'New OS Window')
@@ -843,9 +856,11 @@ class Boss:
 
             map f1 remote_control_script /path/to/script arg1 arg2 ...
 
-        See :ref:`rc_mapping` for details.
+        See :ref:`rc_mapping` for details. Relative paths are resolved with respect
+        to the kitty config directory.
         ''')
     def remote_control_script(self, path: str, *args: str) -> None:
+        path = resolve_custom_file(path)
         path = which(path) or path
         if not os.access(path, os.X_OK):
             self.show_error('Remote control script not executable', f'The script {path} is not executable check its permissions')
@@ -1220,7 +1235,8 @@ class Boss:
         window: Window | None = None,  # the window associated with the confirmation
         prompt: str = '> ',
         is_password: bool = False,
-        initial_value: str = ''
+        initial_value: str = '',
+        window_title: str = '',
     ) -> None:
         result: str = ''
 
@@ -1234,6 +1250,8 @@ class Boss:
         cmd = ['--type', 'password' if is_password else 'line', '--message', msg, '--prompt', prompt]
         if initial_value:
             cmd.append('--default=' + initial_value)
+        if window_title:
+            cmd.append(f'--title={window_title}')
         self.run_kitten_with_metadata(
             'ask', cmd, window=window, custom_callback=callback_, default_data={'response': ''}, action_on_removal=on_popup_overlay_removal
         )
@@ -1374,6 +1392,10 @@ class Boss:
             run_update_check(get_options().update_check_interval * 60 * 60)
             self.update_check_started = True
 
+    def handle_window_title_bar_mouse(self, os_window_id: int, window_id: int, button: int, modifiers: int, action: int) -> None:
+        if tm := self.os_window_map.get(os_window_id):
+            tm.handle_window_title_bar_mouse(window_id, button, modifiers, action)
+
     def handle_tab_bar_mouse(self, os_window_id: int, x: float, y: float, button: int, modifiers: int, action: int) -> None:
         if tm := self.os_window_map.get(os_window_id):
             tm.handle_tab_bar_mouse(x, y, button, modifiers, action)
@@ -1457,7 +1479,7 @@ class Boss:
     def set_font_size(self, new_size: float) -> None:  # legacy
         self.change_font_size(True, None, new_size)
 
-    @ac('win', '''
+    @ac('fs', '''
         Change the font size for the current or all OS Windows
 
         See :ref:`conf-kitty-shortcuts.fonts` for details.
@@ -1936,10 +1958,11 @@ class Boss:
             y -= central.top
             if tab := tm.active_tab:
                 for window in tab:
-                    g = window.geometry
-                    if g.left <= x < g.right and g.top <= y < g.bottom:
-                        window.on_drop(drop)
-                        break
+                    if window.is_visible_in_layout:
+                        g = window.geometry
+                        if g.left <= x < g.right and g.top <= y < g.bottom:
+                            window.on_drop(drop)
+                            break
         elif tab_bar.left <= x < tab_bar.right and tab_bar.top <= y < tab_bar.bottom:
             if (tab_id := tm.tab_bar.tab_id_at(x)) and (tab := self.tab_for_id(tab_id)) and (w := tab.active_window):
                 w.on_drop(drop)
@@ -2294,6 +2317,14 @@ class Boss:
     def input_unicode_character(self) -> None:
         self.run_kitten_with_metadata('unicode_input', window=self.window_for_dispatch)
 
+    @ac('misc', '''
+        Browse and trigger keyboard shortcuts and actions in a searchable overlay.
+        ''')
+    def command_palette(self) -> None:
+        from kittens.command_palette.main import collect_keys_data
+        data = collect_keys_data(get_options())
+        self.run_kitten_with_metadata('command-palette', input_data=json.dumps(data), window=self.window_for_dispatch)
+
     @ac(
         'tab', '''
         Change the title of the active tab interactively, by typing in the new title.
@@ -2324,7 +2355,7 @@ class Boss:
                 prefilled = ''
             self.get_line(
                 _('Enter the new title for this tab below. An empty title will cause the default title to be used.'),
-                tab.set_title, window=tab.active_window, initial_value=prefilled)
+                tab.set_title, window=tab.active_window, initial_value=prefilled, window_title=_('Rename tab'))
 
     def create_special_window_for_show_error(self, title: str, msg: str, overlay_for: int | None = None) -> SpecialWindowInstance:
         ec = sys.exc_info()
@@ -2414,6 +2445,48 @@ class Boss:
         tab = self.active_tab
         if tab:
             tab.set_active_window(window_id)
+
+    def drag_resize_start(
+        self, edges: int, x: float, y: float, window_id: int, cell_width: int, cell_height: int,
+    ) -> bool:
+        if (w := self.window_id_map.get(window_id)) and (tab := w.tabref()):
+            data = tab.current_layout.drag_resize_target_windows(w, x, y, edges, tab.windows)
+            if not edges & (LEFT_EDGE | RIGHT_EDGE):
+                data = data._replace(horizontal_id=None)
+            if not edges & (TOP_EDGE | BOTTOM_EDGE):
+                data = data._replace(vertical_id=None)
+            self.drag_resize_of_window = WindowResizeDrag(
+                is_active=True, tab_id=tab.id, data=data,
+                cell_width=cell_width, cell_height=cell_height, initial_x=x, initial_y=y,
+            )
+            for cw in tab:
+                cw.pause_resize_notifications_to_child()
+            return True
+        return False
+
+    def drag_resize_update(self, x: float, y: float) -> None:
+        if not (r := self.drag_resize_of_window) or not (tab := self.tab_for_id(r.tab_id)):
+            return
+        if (h := r.data.horizontal_id) is not None:
+            mult = 1 if r.data.width_increases_rightwards else -1
+            step_x = floor((x - r.initial_x) / r.cell_width) * mult
+            dx = step_x - r.last_step_x
+            if dx != 0:
+                if tab.drag_resize_window(h, float(dx), True):
+                    self.drag_resize_of_window = r._replace(last_step_x=step_x)
+        if (v := r.data.vertical_id) is not None:
+            mult = 1 if r.data.height_increases_downwards else -1
+            step_y = floor((y - r.initial_y) / r.cell_height) * mult
+            dy = step_y - r.last_step_y
+            if dy != 0:
+                if tab.drag_resize_window(v, float(dy), False):
+                    self.drag_resize_of_window = r._replace(last_step_y=step_y)
+
+    def drag_resize_end(self) -> None:
+        if tab := self.tab_for_id(self.drag_resize_of_window.tab_id):
+            for cw in tab:
+                cw.pause_resize_notifications_to_child(pause=False)
+        self.drag_resize_of_window = WindowResizeDrag()
 
     def open_kitty_website(self) -> None:
         self.open_url(website_url())
@@ -2877,7 +2950,10 @@ class Boss:
         else:
             w = tab.new_window(cwd_from=cwd_from, location=location, allow_remote_control=allow_remote_control)
         if cwd_from is not None and (sw := cwd_from.window):
-            w.created_in_session_name = sw.created_in_session_name
+            session_name = sw.created_in_session_name
+            if not session_name and (sw_tab := sw.tabref()):
+                session_name = sw_tab.created_in_session_name
+            w.created_in_session_name = session_name
         return w
 
     @ac('win', 'Create a new window')
@@ -2911,13 +2987,13 @@ class Boss:
             opts.next_to = opts.next_to or f'id:{self.window_for_dispatch.id}'
         launch(self, opts, args_)
 
-    @ac('tab', 'Move the active tab forward')
+    @ac('tab', 'Move the active tab forward. You can also use drag and drop to re-arrange tabs.')
     def move_tab_forward(self) -> None:
         tm = self.active_tab_manager
         if tm is not None:
             tm.move_tab(1)
 
-    @ac('tab', 'Move the active tab backward')
+    @ac('tab', 'Move the active tab backward. You can also use drag and drop to re-arrange tabs.')
     def move_tab_backward(self) -> None:
         tm = self.active_tab_manager_with_dispatch
         if tm is not None:
@@ -3289,7 +3365,7 @@ class Boss:
         self.choose_entry('Choose a tab to move the window to', items, chosen)
 
     @ac('tab', '''
-        Detach a tab, moving it to another OS Window
+        Detach a tab, moving it to another OS Window. You can also use drag and drop to detach tabs.
 
         See :ref:`detaching windows <detach_window>` for details.
         ''')
